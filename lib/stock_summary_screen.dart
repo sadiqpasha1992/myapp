@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart'; // Import Hive for ValueListenableBuilder
-import '../data/app_data.dart'; // Import our shared data file
+import 'package:myapp/data/app_data.dart'; // Import AppData for product data
+import 'package:myapp/product_detail_screen.dart'; // We'll create this next for edit/delete
 
-// Product class is defined in app_data.dart
-
-// StockSummaryScreen is now a StatefulWidget because its content (form fields and the list of products)
-// will change over time based on user interaction.
+// StockSummaryScreen is now a StatefulWidget to handle search functionality.
 class StockSummaryScreen extends StatefulWidget {
   const StockSummaryScreen({super.key});
 
@@ -13,9 +11,13 @@ class StockSummaryScreen extends StatefulWidget {
   State<StockSummaryScreen> createState() => _StockSummaryScreenState();
 }
 
-// This is the "State" class that holds the changeable data for StockSummaryScreen.
 class _StockSummaryScreenState extends State<StockSummaryScreen> {
-  // TextEditingControllers for product input fields
+  // Controller for the search input field
+  final TextEditingController _searchController = TextEditingController();
+  // State variable to hold the current search query
+  String _searchQuery = '';
+
+  // TextEditingControllers for adding new product fields
   final TextEditingController _productNameController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
   final TextEditingController _unitController = TextEditingController();
@@ -23,12 +25,20 @@ class _StockSummaryScreenState extends State<StockSummaryScreen> {
       TextEditingController();
   final TextEditingController _sellingPriceController = TextEditingController();
 
-  // We no longer need a local List<Product> here, as data will come directly from Hive.
-  // final List<Product> _productsList = [];
+  @override
+  void initState() {
+    super.initState();
+    // Listen for changes in the search input field
+    _searchController.addListener(() {
+      setState(() {
+        _searchQuery = _searchController.text;
+      });
+    });
+  }
 
-  // Dispose controllers to free up memory when the widget is removed
   @override
   void dispose() {
+    _searchController.dispose();
     _productNameController.dispose();
     _quantityController.dispose();
     _unitController.dispose();
@@ -37,8 +47,8 @@ class _StockSummaryScreenState extends State<StockSummaryScreen> {
     super.dispose();
   }
 
-  // Method to save a new product
-  void _saveProduct() {
+  // Method to save a new product to Hive
+  void _saveProduct() async {
     final String name = _productNameController.text.trim();
     final String quantityStr = _quantityController.text.trim();
     final String unit = _unitController.text.trim();
@@ -62,17 +72,28 @@ class _StockSummaryScreenState extends State<StockSummaryScreen> {
     final double? sellingPrice = double.tryParse(sellingPriceStr);
 
     if (quantity == null ||
+        quantity < 0 ||
         purchasePrice == null ||
+        purchasePrice < 0 ||
         sellingPrice == null ||
-        quantity <= 0 ||
-        purchasePrice <= 0 ||
-        sellingPrice <= 0) {
+        sellingPrice < 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Please enter valid positive numbers for quantity and prices!',
+            'Please enter valid positive numbers for Quantity, Purchase Price, and Selling Price!',
           ),
         ),
+      );
+      return;
+    }
+
+    // Check for duplicate product name before adding
+    final existingProducts = AppData.productsBox.values.toList();
+    if (existingProducts.any(
+      (p) => p.name.toLowerCase() == name.toLowerCase(),
+    )) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Product with this name already exists!')),
       );
       return;
     }
@@ -87,78 +108,58 @@ class _StockSummaryScreenState extends State<StockSummaryScreen> {
     );
 
     // Add to the Hive Box using AppData
-    AppData.addProduct(newProduct)
-        .then((_) {
-          // Check if the widget is still mounted before using context
-          if (!mounted) return;
+    await AppData.addProduct(newProduct);
 
-          // Clear text fields after saving
-          _productNameController.clear();
-          _quantityController.clear();
-          _unitController.clear();
-          _purchasePriceController.clear();
-          _sellingPriceController.clear();
+    // Check if the widget is still mounted after the async operation
+    if (!mounted) return;
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Product added successfully!')),
-          );
-        })
-        .catchError((error) {
-          // Check if the widget is still mounted before using context
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to add product: $error')),
-          );
-        });
+    // Clear text fields after saving
+    _productNameController.clear();
+    _quantityController.clear();
+    _unitController.clear();
+    _purchasePriceController.clear();
+    _sellingPriceController.clear();
+
+    // Now it's safe to use context
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Product added successfully!')),
+    );
   }
 
-  // Method to delete a product
-  void _deleteProduct(int index) {
+  // Method to delete a product from Hive
+  void _deleteProduct(int index, String productName) {
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
-        // Use dialogContext to avoid confusion
         return AlertDialog(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(15),
           ),
           title: const Text('Confirm Deletion'),
-          // Access product details directly from the box for the dialog content
           content: Text(
-            'Are you sure you want to delete "${AppData.productsBox.getAt(index)?.name}"? This action cannot be undone.',
+            'Are you sure you want to delete product "$productName"? This action cannot be undone and will affect related transactions (though transactions themselves won\'t be deleted).',
           ),
           actions: <Widget>[
             TextButton(
               onPressed: () {
-                Navigator.of(dialogContext).pop(); // Close the dialog
+                Navigator.of(dialogContext).pop();
               },
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
-                // Close the dialog before the async delete operation
+              onPressed: () async {
                 Navigator.of(dialogContext).pop();
-
-                // Delete from the Hive Box using AppData
-                AppData.deleteProduct(index)
-                    .then((_) {
-                      // Check if the widget is still mounted before using context
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Product deleted successfully!'),
-                        ),
-                      );
-                    })
-                    .catchError((error) {
-                      // Check if the widget is still mounted before using context
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Failed to delete product: $error'),
-                        ),
-                      );
-                    });
+                // Capture the context before the async operation
+                final currentContext = context;
+                await AppData.deleteProduct(index);
+                // Check if the widget is still mounted after the async operation
+                if (currentContext.mounted) {
+                  ScaffoldMessenger.of(currentContext).showSnackBar(
+                    const SnackBar(
+                      content: Text('Product deleted successfully!'),
+                    ),
+                  );
+                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
@@ -185,6 +186,7 @@ class _StockSummaryScreenState extends State<StockSummaryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // --- Section: Add New Product ---
             const Text(
               'Add New Product:',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -221,7 +223,7 @@ class _StockSummaryScreenState extends State<StockSummaryScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Unit Text Field (for now, simple text input for unit)
+            // Unit Text Field
             TextField(
               controller: _unitController,
               decoration: const InputDecoration(
@@ -287,33 +289,61 @@ class _StockSummaryScreenState extends State<StockSummaryScreen> {
 
             const SizedBox(height: 32),
 
+            // --- Section: Search Products ---
+            const Text(
+              'Search Products:',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _searchController,
+              decoration: const InputDecoration(
+                labelText: 'Search by Product Name',
+                hintText: 'e.g., Laptop',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(8.0)),
+                ),
+                prefixIcon: Icon(Icons.search),
+              ),
+              keyboardType: TextInputType.text,
+            ),
+            const SizedBox(height: 32),
+
             // --- Section: Displaying Stored Products ---
-            // Use ValueListenableBuilder to automatically rebuild when Hive box changes
             ValueListenableBuilder(
-              valueListenable:
-                  AppData.productsBox
-                      .listenable(), // Listen for changes in the 'products' box
+              valueListenable: AppData.productsBox.listenable(),
               builder: (context, Box<Product> box, _) {
-                // Get the current list of products from the box
-                final List<Product> products = box.values.toList();
+                // Get all products and apply search filter
+                List<Product> products = box.values.toList();
+                if (_searchQuery.isNotEmpty) {
+                  products =
+                      products
+                          .where(
+                            (product) => product.name.toLowerCase().contains(
+                              _searchQuery.toLowerCase(),
+                            ),
+                          )
+                          .toList();
+                }
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Your Current Stock (${products.length})', // Shows count of products from Hive
+                      'Your Current Stock (${products.length})',
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 16),
+
                     products.isEmpty
                         ? const Center(
                           child: Padding(
                             padding: EdgeInsets.all(16.0),
                             child: Text(
-                              'No products added yet. Add your first product above!',
+                              'No products match your search or no products added yet.',
                               style: TextStyle(
                                 fontSize: 16,
                                 color: Colors.grey,
@@ -324,18 +354,18 @@ class _StockSummaryScreenState extends State<StockSummaryScreen> {
                         )
                         : Container(
                           constraints: BoxConstraints(
-                            maxHeight:
-                                MediaQuery.of(context).size.height *
-                                0.5, // Max height of the list
+                            maxHeight: MediaQuery.of(context).size.height * 0.5,
                           ),
                           child: ListView.builder(
                             shrinkWrap: true,
                             physics: const ClampingScrollPhysics(),
-                            itemCount:
-                                products.length, // Use the list from Hive
+                            itemCount: products.length,
                             itemBuilder: (context, index) {
-                              final product =
-                                  products[index]; // Use the product from Hive
+                              final product = products[index];
+                              // Get the actual Hive key for this product for editing/deleting
+                              final int hiveIndex = box.keyAt(
+                                box.values.toList().indexOf(product),
+                              );
 
                               return Card(
                                 margin: const EdgeInsets.symmetric(
@@ -345,51 +375,63 @@ class _StockSummaryScreenState extends State<StockSummaryScreen> {
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
                                 ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16.0),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              product.name,
-                                              style: const TextStyle(
-                                                fontSize: 18,
-                                                fontWeight: FontWeight.bold,
-                                              ),
+                                child: ListTile(
+                                  onTap: () {
+                                    // Navigate to ProductDetailScreen for editing/viewing
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder:
+                                            (context) => ProductDetailScreen(
+                                              product: product,
+                                              productIndex: hiveIndex,
                                             ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              'Quantity: ${product.quantity} ${product.unit}',
-                                            ),
-                                            Text(
-                                              'Purchase Price: ₹ ${product.purchasePrice.toStringAsFixed(2)}',
-                                            ),
-                                            Text(
-                                              'Selling Price: ₹ ${product.sellingPrice.toStringAsFixed(2)}',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
                                       ),
-                                      IconButton(
-                                        // Delete icon button
-                                        icon: const Icon(
-                                          Icons.delete,
-                                          color: Colors.red,
-                                        ),
-                                        onPressed:
-                                            () => _deleteProduct(
-                                              index,
-                                            ), // Call delete method
-                                        tooltip: 'Delete Product',
+                                    );
+                                  },
+                                  leading: Icon(
+                                    Icons.inventory,
+                                    color:
+                                        product.quantity < 10
+                                            ? Colors.red
+                                            : Colors.teal,
+                                  ),
+                                  title: Text(
+                                    product.name,
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color:
+                                          product.quantity < 10
+                                              ? Colors.red
+                                              : Colors.black, // Low stock alert
+                                    ),
+                                  ),
+                                  subtitle: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Current Stock: ${product.quantity} ${product.unit}',
+                                      ),
+                                      Text(
+                                        'Purchase Price: ₹ ${product.purchasePrice.toStringAsFixed(2)}',
+                                      ),
+                                      Text(
+                                        'Selling Price: ₹ ${product.sellingPrice.toStringAsFixed(2)}',
                                       ),
                                     ],
+                                  ),
+                                  trailing: IconButton(
+                                    icon: const Icon(
+                                      Icons.delete,
+                                      color: Colors.grey,
+                                    ),
+                                    onPressed:
+                                        () => _deleteProduct(
+                                          hiveIndex,
+                                          product.name,
+                                        ),
                                   ),
                                 ),
                               );
