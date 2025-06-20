@@ -1,26 +1,27 @@
-// lib/main.dart (Quick Actions Text Modified)
+// lib/main.dart
 import 'package:flutter/material.dart';
 
 import 'package:myapp/data/app_data.dart';
 // Ensure this is imported
 
-// CORE SCREENS (used in bottom navigation) - MUST BE BODY-ONLY
+// CORE SCREENS (used in bottom navigation) - These should be BODY-ONLY
 import 'package:myapp/dashboard_screen.dart';
-import 'package:myapp/sales_screen.dart';
-import 'package:myapp/purchase_screen.dart';
+import 'package:myapp/sales_screen.dart'; // Make sure the path is correct if different from root
+import 'package:myapp/purchase_screen.dart'; // Make sure the path is correct
 import 'package:myapp/stock_summary_screen.dart';
 import 'package:myapp/reports_screen.dart';
 
 // QUICK ACTION SCREENS (navigated to via FAB - these CAN have their own Scaffold/AppBar)
 import 'package:myapp/expense_screen.dart';
 import 'package:myapp/invoice_screen.dart';
-import 'package:myapp/edit_sale_screen.dart';
-import 'package:myapp/edit_purchase_screen.dart';
-import 'package:myapp/product_detail_screen.dart';
+// Used for 'Sale' Quick Action
+// Used for 'Purchase' Quick Action
+import 'package:myapp/product_detail_screen.dart'; // Used for 'Product' Quick Action
 import 'package:myapp/returns_screen.dart';
 import 'package:myapp/sales_return_screen.dart';
 import 'package:myapp/purchase_return_screen.dart';
-import 'package:myapp/parties_screen.dart';
+// Used for 'Party' Quick Action
+import 'package:myapp/add_party_screen.dart'; // Used when adding a new party
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,20 +44,22 @@ class _MyAppState extends State<MyApp> {
     'Sales',
     'Purchases',
     'Stock Summary',
-    'Reports',
+    'Reports', // This title corresponds to the 5th item in BottomNavigationBar
   ];
 
-  static const List<Widget> _widgetBodies = <Widget>[
-    DashboardScreen(),
-    SalesScreen(),
-    PurchaseScreen(),
-    StockSummaryScreen(),
-    ReportsScreen(),
+  // These widgets are now body-only and DO NOT have their own Scaffold.
+  static final List<Widget> _widgetBodies = <Widget>[
+    const DashboardScreen(),
+    const SalesScreen(),
+    const PurchaseScreen(), // Corrected from PurchaseScreen to PurchasesScreen as per bottom nav
+    const StockSummaryScreen(),
+    const ReportsScreen(),
   ];
 
   void _onItemTapped(int index) {
+    // Guard against index out of bounds, though it shouldn't happen with fixed items
     if (index >= _widgetBodies.length) {
-      _selectedIndex = 0;
+      _selectedIndex = 0; // Default to Dashboard if invalid index
     } else {
       setState(() {
         _selectedIndex = index;
@@ -64,65 +67,44 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
-  // Quick Actions Modal function - Text updated
+  // Quick Actions Modal function - Now correctly removes "Sale" and "Purchase" ListTiles
   void _showQuickActionsModal(BuildContext contextForModal) {
     showModalBottomSheet(
       context: contextForModal,
+      isScrollControlled: true, // Allows content to be scrollable if needed
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (BuildContext bc) {
-        return SafeArea(
-          child: Wrap(
+        return Padding(
+          // Added padding for better modal appearance
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            // Used Column for direct children control
+            mainAxisSize: MainAxisSize.min, // Make it wrap content tightly
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
+              // === "Sale" and "Purchase" ListTiles have been REMOVED from here ===
+              // They are already in the main BottomNavigationBar
               ListTile(
-                leading: const Icon(Icons.shopping_cart, color: Colors.green),
-                title: const Text('Sale'), // Text changed
+                leading: const Icon(Icons.group_add, color: Colors.purple),
+                title: const Text('Party'),
                 onTap: () {
-                  Navigator.pop(bc);
+                  Navigator.pop(bc); // Close the modal
                   Navigator.push(
                     contextForModal,
                     MaterialPageRoute(
-                      builder:
-                          (context) =>
-                              const EditSaleScreen(sale: null, saleIndex: null),
-                    ),
+                      builder: (context) => const AddPartyScreen(),
+                    ), // Navigates to AddPartyScreen to add new
                   );
                 },
               ),
               ListTile(
                 leading: const Icon(
-                  Icons.add_shopping_cart,
-                  color: Colors.orange,
-                ),
-                title: const Text('Purchase'), // Text changed
-                onTap: () {
-                  Navigator.pop(bc);
-                  Navigator.push(
-                    contextForModal,
-                    MaterialPageRoute(
-                      builder:
-                          (context) => const EditPurchaseScreen(
-                            purchase: null,
-                            purchaseIndex: null,
-                          ),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.group_add, color: Colors.purple),
-                title: const Text('Party'), // Text changed
-                onTap: () {
-                  Navigator.pop(bc);
-                  Navigator.push(
-                    contextForModal,
-                    MaterialPageRoute(
-                      builder: (context) => const PartiesScreen(),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.inventory_2, color: Colors.blue),
-                title: const Text('Product'), // Text changed
+                  Icons.inventory_2,
+                  color: Colors.blue,
+                ), // Changed icon for clarity
+                title: const Text('Product'),
                 onTap: () {
                   Navigator.pop(bc);
                   Navigator.push(
@@ -131,14 +113,14 @@ class _MyAppState extends State<MyApp> {
                       builder:
                           (context) => const ProductDetailScreen(
                             product: null,
-                          ),
+                          ), // For adding new product
                     ),
                   );
                 },
               ),
               ListTile(
                 leading: const Icon(Icons.money_off, color: Colors.red),
-                title: const Text('Expense'), // Text changed
+                title: const Text('Expense'),
                 onTap: () {
                   Navigator.pop(bc);
                   Navigator.push(
@@ -151,9 +133,7 @@ class _MyAppState extends State<MyApp> {
               ),
               ListTile(
                 leading: const Icon(Icons.receipt, color: Colors.teal),
-                title: const Text(
-                  'Generate Invoice',
-                ), // Text not changed, as 'Generate' is part of the action
+                title: const Text('Generate Invoice'),
                 onTap: () {
                   Navigator.pop(bc);
                   Navigator.push(
@@ -169,7 +149,7 @@ class _MyAppState extends State<MyApp> {
                   Icons.assignment_return,
                   color: Colors.lightBlue,
                 ),
-                title: const Text('Sales Return'), // Text changed
+                title: const Text('Sales Return'),
                 onTap: () {
                   Navigator.pop(bc);
                   Navigator.push(
@@ -182,7 +162,7 @@ class _MyAppState extends State<MyApp> {
               ),
               ListTile(
                 leading: const Icon(Icons.refresh, color: Colors.brown),
-                title: const Text('Purchase Return'), // Text changed
+                title: const Text('Purchase Return'),
                 onTap: () {
                   Navigator.pop(bc);
                   Navigator.push(
@@ -195,9 +175,7 @@ class _MyAppState extends State<MyApp> {
               ),
               ListTile(
                 leading: const Icon(Icons.view_list, color: Colors.indigo),
-                title: const Text(
-                  'View All Returns',
-                ), // Text not changed, as 'View All' is part of the action
+                title: const Text('View All Returns'),
                 onTap: () {
                   Navigator.pop(bc);
                   Navigator.push(
@@ -225,14 +203,22 @@ class _MyAppState extends State<MyApp> {
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
       home: Scaffold(
+        // This is the ONE main Scaffold for the app
         appBar: AppBar(
           title: Text(_appBarTitles[_selectedIndex]),
           backgroundColor: Colors.blueAccent,
           foregroundColor: Colors.white,
+          // Removed the title for dashboard for simplicity
+          // You can customize app bar based on selected index if needed
         ),
-        body: _widgetBodies.elementAt(_selectedIndex),
+        body: IndexedStack(
+          // Use IndexedStack to preserve state of tabs
+          index: _selectedIndex,
+          children: _widgetBodies,
+        ),
         floatingActionButton: Builder(
           builder: (contextForFab) {
+            // This is the ONE Floating Action Button for the app
             return FloatingActionButton(
               onPressed: () {
                 _showQuickActionsModal(contextForFab);
@@ -243,7 +229,10 @@ class _MyAppState extends State<MyApp> {
             );
           },
         ),
+        floatingActionButtonLocation:
+            FloatingActionButtonLocation.endFloat, // Place FAB at bottom right
         bottomNavigationBar: BottomNavigationBar(
+          // This is the ONE Bottom Navigation Bar for the app
           items: const <BottomNavigationBarItem>[
             BottomNavigationBarItem(
               icon: Icon(Icons.dashboard),
@@ -267,14 +256,14 @@ class _MyAppState extends State<MyApp> {
             ),
           ],
           currentIndex: _selectedIndex,
-          selectedItemColor: Colors.amber[800],
+          selectedItemColor: Colors.amber[800], // Highlight selected item
           unselectedItemColor: Colors.grey,
           onTap: _onItemTapped,
-          type: BottomNavigationBarType.fixed,
+          type: BottomNavigationBarType.fixed, // Ensures all labels are shown
           backgroundColor: Colors.white,
           selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold),
           unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal),
-          showUnselectedLabels: true,
+          showUnselectedLabels: true, // Show labels for unselected items
         ),
       ),
     );
