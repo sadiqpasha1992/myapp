@@ -44,72 +44,51 @@ class _PartiesScreenState extends State<PartiesScreen> {
         foregroundColor: Colors.white,
       ),
       body: Column(
-        // Use a Column to place search bar above the list
         children: [
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: TextField(
               controller: _searchController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration( // Use InputDecoration directly
                 hintText: 'Search parties...',
-                prefixIcon: Icon(Icons.search),
+                prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(10.0)),
+                  borderRadius: BorderRadius.circular(10.0), // Rounded border
                 ),
               ),
             ),
           ),
           Expanded(
-            // Expanded to make sure the list takes remaining space
             child: ValueListenableBuilder(
               valueListenable: AppData.partiesBox.listenable(),
               builder: (context, Box<Party> box, _) {
-                // Filter parties based on search query
                 final List<Party> allParties = box.values.toList();
-                final List<Party> filteredParties =
-                    allParties.where((party) {
-                      final query =
-                          _searchQuery; // Already lowercased in _onSearchChanged
+                final List<Party> filteredParties = allParties.where((party) {
+                  final query = _searchQuery;
 
-                      return party.name.toLowerCase().contains(query) ||
-                          party.type.toLowerCase().contains(query) ||
-                          (party.phone?.toLowerCase().contains(query) ??
-                              false) ||
-                          (party.address?.toLowerCase().contains(query) ??
-                              false) ||
-                          (party.email?.toLowerCase().contains(query) ??
-                              false) || // Check email
-                          (party.gstNumber?.toLowerCase().contains(query) ??
-                              false); // Check GST
-                    }).toList();
+                  return party.name.toLowerCase().contains(query) ||
+                         party.type.toLowerCase().contains(query) ||
+                         (party.phone?.toLowerCase().contains(query) ?? false) ||
+                         (party.address?.toLowerCase().contains(query) ?? false) ||
+                         (party.email?.toLowerCase().contains(query) ?? false) ||
+                         (party.gstNumber?.toLowerCase().contains(query) ?? false);
+                }).toList();
 
                 if (filteredParties.isEmpty) {
                   return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          Icons.people_alt,
-                          size: 80,
-                          color: Colors.grey[300],
-                        ),
+                        Icon(Icons.people_alt, size: 80, color: Colors.grey[300]),
                         const SizedBox(height: 10),
                         Text(
-                          _searchQuery.isEmpty
-                              ? 'No parties added yet.'
-                              : 'No matching parties found.',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.grey[600],
-                          ),
+                          _searchQuery.isEmpty ? 'No parties added yet.' : 'No matching parties found.',
+                          style: TextStyle(fontSize: 18, color: Colors.grey[600]),
                         ),
                         if (_searchQuery.isEmpty)
                           Text(
                             'Tap the + button to add a new party.',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[500],
-                            ),
+                            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
                           ),
                       ],
                     ),
@@ -123,20 +102,12 @@ class _PartiesScreenState extends State<PartiesScreen> {
                     final party = filteredParties[index];
                     return Card(
                       elevation: 2,
-                      margin: const EdgeInsets.symmetric(
-                        vertical: 8,
-                        horizontal: 4,
-                      ),
+                      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                       child: ListTile(
                         leading: CircleAvatar(
-                          backgroundColor:
-                              party.type == 'Customer'
-                                  ? Colors.blueAccent
-                                  : Colors.orangeAccent,
+                          backgroundColor: party.type == 'Customer' ? Colors.blueAccent : Colors.orangeAccent,
                           child: Icon(
-                            party.type == 'Customer'
-                                ? Icons.person
-                                : Icons.business,
+                            party.type == 'Customer' ? Icons.person : Icons.business,
                             color: Colors.white,
                           ),
                         ),
@@ -148,18 +119,10 @@ class _PartiesScreenState extends State<PartiesScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text('Type: ${party.type}'),
-                            if (party.email != null && party.email!.isNotEmpty)
-                              Text('Email: ${party.email!}'), // Display Email
-                            if (party.phone != null && party.phone!.isNotEmpty)
-                              Text('Phone: ${party.phone!}'),
-                            if (party.address != null &&
-                                party.address!.isNotEmpty)
-                              Text('Address: ${party.address!}'),
-                            if (party.gstNumber != null &&
-                                party.gstNumber!.isNotEmpty)
-                              Text(
-                                'GST: ${party.gstNumber!}',
-                              ), // Display GST Number
+                            if (party.email != null && party.email!.isNotEmpty) Text('Email: ${party.email!}'),
+                            if (party.phone != null && party.phone!.isNotEmpty) Text('Phone: ${party.phone!}'),
+                            if (party.address != null && party.address!.isNotEmpty) Text('Address: ${party.address!}'),
+                            if (party.gstNumber != null && party.gstNumber!.isNotEmpty) Text('GST: ${party.gstNumber!}'),
                           ],
                         ),
                         trailing: Row(
@@ -168,16 +131,13 @@ class _PartiesScreenState extends State<PartiesScreen> {
                             IconButton(
                               icon: const Icon(Icons.edit, color: Colors.blue),
                               onPressed: () {
-                                // Navigate to AddPartyScreen for editing
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder:
-                                        (context) => AddPartyScreen(
-                                          partyToEdit: party,
-                                          // Pass the original index from the unfiltered list for Hive.putAt
-                                          partyIndex: allParties.indexOf(party),
-                                        ),
+                                    builder: (context) => AddPartyScreen(
+                                      partyToEdit: party,
+                                      partyIndex: allParties.indexOf(party),
+                                    ),
                                   ),
                                 );
                               },
@@ -185,15 +145,12 @@ class _PartiesScreenState extends State<PartiesScreen> {
                             IconButton(
                               icon: const Icon(Icons.delete, color: Colors.red),
                               onPressed: () {
-                                // Implement delete confirmation dialog
                                 showDialog(
                                   context: context,
                                   builder: (BuildContext dialogContext) {
                                     return AlertDialog(
                                       title: const Text('Delete Party'),
-                                      content: Text(
-                                        'Are you sure you want to delete ${party.name}?',
-                                      ),
+                                      content: Text('Are you sure you want to delete ${party.name}?'),
                                       actions: <Widget>[
                                         TextButton(
                                           child: const Text('Cancel'),
@@ -204,19 +161,10 @@ class _PartiesScreenState extends State<PartiesScreen> {
                                         TextButton(
                                           child: const Text('Delete'),
                                           onPressed: () {
-                                            // Delete using the original index to avoid issues with filtered list
-                                            box.deleteAt(
-                                              allParties.indexOf(party),
-                                            );
+                                            box.deleteAt(allParties.indexOf(party));
                                             Navigator.of(dialogContext).pop();
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  '${party.name} deleted.',
-                                                ),
-                                              ),
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(content: Text('${party.name} deleted.')),
                                             );
                                           },
                                         ),
