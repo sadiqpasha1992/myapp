@@ -1,12 +1,12 @@
 // lib/add_party_screen.dart
 import 'package:flutter/material.dart';
 import 'package:myapp/data/app_data.dart';
-import 'package:myapp/models/models.dart'; // Ensure Party model is here
-import 'package:uuid/uuid.dart'; // Import uuid package
+import 'package:myapp/models/models.dart';
+import 'package:uuid/uuid.dart'; // Import the uuid package
 
 class AddPartyScreen extends StatefulWidget {
-  final Party? partyToEdit; // Optional: for editing existing parties
-  final int? partyIndex; // Optional: index if editing
+  final Party? partyToEdit;
+  final int? partyIndex;
 
   const AddPartyScreen({super.key, this.partyToEdit, this.partyIndex});
 
@@ -19,24 +19,18 @@ class _AddPartyScreenState extends State<AddPartyScreen> {
   late TextEditingController _nameController;
   late TextEditingController _phoneController;
   late TextEditingController _addressController;
-  late TextEditingController _gstNumberController; // Controller for GST number
-  String? _selectedPartyType; // 'Customer' or 'Vendor'
+  late TextEditingController _gstNumberController; // Existing GST controller
+  late TextEditingController _emailController; // NEW controller for Email
+  String? _selectedPartyType;
 
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(
-      text: widget.partyToEdit?.name ?? '',
-    );
-    _phoneController = TextEditingController(
-      text: widget.partyToEdit?.contactNumber ?? '',
-    );
-    _addressController = TextEditingController(
-      text: widget.partyToEdit?.address ?? '',
-    );
-    _gstNumberController = TextEditingController( // Initialize GST number controller
-      text: widget.partyToEdit?.gstNumber ?? '',
-    );
+    _nameController = TextEditingController(text: widget.partyToEdit?.name ?? '');
+    _phoneController = TextEditingController(text: widget.partyToEdit?.phone ?? '');
+    _addressController = TextEditingController(text: widget.partyToEdit?.address ?? '');
+    _gstNumberController = TextEditingController(text: widget.partyToEdit?.gstNumber ?? ''); // Existing GST initialization
+    _emailController = TextEditingController(text: widget.partyToEdit?.email ?? ''); // Initialize Email controller
     _selectedPartyType = widget.partyToEdit?.type;
   }
 
@@ -45,7 +39,8 @@ class _AddPartyScreenState extends State<AddPartyScreen> {
     _nameController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
-    _gstNumberController.dispose(); // Dispose GST number controller
+    _gstNumberController.dispose(); // Dispose existing GST controller
+    _emailController.dispose(); // Dispose NEW Email controller
     super.dispose();
   }
 
@@ -54,44 +49,47 @@ class _AddPartyScreenState extends State<AddPartyScreen> {
       _formKey.currentState!.save();
 
       if (_selectedPartyType == null) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please select a party type (Customer/Vendor).'),
-          ),
+          const SnackBar(content: Text('Please select a party type (Customer/Vendor).')),
         );
         return;
       }
 
+      // Generate a unique ID for the new party
+      final String partyId = const Uuid().v4();
+
       final newParty = Party(
-        id: widget.partyToEdit?.id ?? const Uuid().v4(), // Use existing ID or generate new
+        id: partyId, // Provide the generated ID
         name: _nameController.text.trim(),
         type: _selectedPartyType!,
-        contactNumber: _phoneController.text.trim(), // Pass non-nullable string
-        address: _addressController.text.trim(), // Pass non-nullable string
-        gstNumber: _gstNumberController.text.trim(), // Pass GST number
+        phone: _phoneController.text.trim().isNotEmpty ? _phoneController.text.trim() : null,
+        address: _addressController.text.trim().isNotEmpty ? _addressController.text.trim() : null,
+        gstNumber: _gstNumberController.text.trim().isNotEmpty ? _gstNumberController.text.trim() : null, // Save existing GST
+        email: _emailController.text.trim().isNotEmpty ? _emailController.text.trim() : null, // Save NEW Email
       );
 
       try {
         if (widget.partyToEdit == null) {
-          // Add new party
           await AppData.partiesBox.add(newParty);
-          if (!mounted) return; // Check if the widget is still mounted
+          if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Party added successfully!')),
           );
         } else {
-          // Update existing party
           await AppData.partiesBox.putAt(widget.partyIndex!, newParty);
-          if (!mounted) return; // Check if the widget is still mounted
+          if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Party updated successfully!')),
           );
         }
-        Navigator.pop(context); // Go back to PartiesScreen
+        if (!mounted) return;
+        Navigator.pop(context);
       } catch (e) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to save party: $e')));
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save party: $e')),
+        );
       }
     }
   }
@@ -100,9 +98,7 @@ class _AddPartyScreenState extends State<AddPartyScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          widget.partyToEdit == null ? 'Add New Party' : 'Edit Party',
-        ),
+        title: Text(widget.partyToEdit == null ? 'Add New Party' : 'Edit Party'),
         backgroundColor: Colors.purple,
         foregroundColor: Colors.white,
       ),
@@ -113,6 +109,36 @@ class _AddPartyScreenState extends State<AddPartyScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Party Type (Moved to TOP as requested)
+              DropdownButtonFormField<String>(
+                value: _selectedPartyType,
+                decoration: const InputDecoration(
+                  labelText: 'Party Type',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.category),
+                ),
+                hint: const Text('Select Party Type'),
+                items: <String>['Customer', 'Vendor']
+                    .map<DropdownMenuItem<String>>((String value) {
+                  return DropdownMenuItem<String>(
+                    value: value,
+                    child: Text(value),
+                  );
+                }).toList(),
+                onChanged: (String? newValue) {
+                  setState(() {
+                    _selectedPartyType = newValue;
+                  });
+                },
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please select a party type';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 20),
+              // Party Name
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(
@@ -128,6 +154,18 @@ class _AddPartyScreenState extends State<AddPartyScreen> {
                 },
               ),
               const SizedBox(height: 20),
+              // Email (NEW field)
+              TextFormField(
+                controller: _emailController,
+                decoration: const InputDecoration(
+                  labelText: 'Email (Optional)',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.email),
+                ),
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 20),
+              // Phone Number
               TextFormField(
                 controller: _phoneController,
                 decoration: const InputDecoration(
@@ -138,6 +176,7 @@ class _AddPartyScreenState extends State<AddPartyScreen> {
                 keyboardType: TextInputType.phone,
               ),
               const SizedBox(height: 20),
+              // Address
               TextFormField(
                 controller: _addressController,
                 decoration: const InputDecoration(
@@ -148,7 +187,8 @@ class _AddPartyScreenState extends State<AddPartyScreen> {
                 maxLines: 3,
               ),
               const SizedBox(height: 20),
-              TextFormField( // Add GST Number field
+              // GST Number (Existing field, maintained here)
+              TextFormField(
                 controller: _gstNumberController,
                 decoration: const InputDecoration(
                   labelText: 'GST Number (Optional)',
@@ -156,50 +196,14 @@ class _AddPartyScreenState extends State<AddPartyScreen> {
                   prefixIcon: Icon(Icons.business),
                 ),
               ),
-              const SizedBox(height: 20),
-              DropdownButtonFormField<String>(
-                value: _selectedPartyType,
-                decoration: const InputDecoration(
-                  labelText: 'Party Type',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.category),
-                ),
-                hint: const Text('Select Party Type'),
-                items:
-                    <String>[
-                      'Customer',
-                      'Vendor',
-                    ].map<DropdownMenuItem<String>>((String value) {
-                      return DropdownMenuItem<String>(
-                        value: value,
-                        child: Text(value),
-                      );
-                    }).toList(),
-                onChanged: (String? newValue) {
-                  setState(() {
-                    _selectedPartyType = newValue;
-                  });
-                },
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please select a party type';
-                  }
-                  return null;
-                },
-              ),
               const SizedBox(height: 30),
               Center(
                 child: ElevatedButton.icon(
                   onPressed: _saveParty,
                   icon: const Icon(Icons.save),
-                  label: Text(
-                    widget.partyToEdit == null ? 'Save Party' : 'Update Party',
-                  ),
+                  label: Text(widget.partyToEdit == null ? 'Save Party' : 'Update Party'),
                   style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 40,
-                      vertical: 15,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
                     textStyle: const TextStyle(fontSize: 18),
                   ),
                 ),

@@ -33,7 +33,16 @@ class EditPurchaseScreenState extends State<EditPurchaseScreen> {
   void initState() {
     super.initState();
     _supplierNameController = TextEditingController(text: widget.purchase?.supplierId ?? ''); // Use supplierId
-    _productNameController = TextEditingController(text: widget.purchase?.productName ?? '');
+
+    String initialProductName = '';
+    if (widget.purchase != null) {
+      final Product? product = AppData.productsBox.values.firstWhereOrNull(
+        (p) => p.id == widget.purchase!.productId,
+      );
+      initialProductName = product?.name ?? '';
+    }
+    _productNameController = TextEditingController(text: initialProductName);
+
     _quantityController = TextEditingController(text: widget.purchase?.quantity.toString() ?? '');
     _purchaseAmountController = TextEditingController(text: widget.purchase?.totalAmount.toString() ?? ''); // Use totalAmount
     _selectedDate = widget.purchase?.purchaseDate ?? DateTime.now(); // Use purchaseDate
@@ -89,12 +98,11 @@ class EditPurchaseScreenState extends State<EditPurchaseScreen> {
         id: widget.purchase?.id ?? const Uuid().v4(),
         productId: product.id, // Use the found product's ID
         supplierId: _supplierNameController.text, // Use supplierId
-        productName: _productNameController.text,
-        quantity: double.parse(_quantityController.text),
-        unitPrice: double.parse(_purchaseAmountController.text), // Assuming purchaseAmount maps to unitPrice in Purchase model
-        totalAmount: double.parse(_quantityController.text) * double.parse(_purchaseAmountController.text), // Calculate totalAmount
+        quantity: int.parse(_quantityController.text), // Changed to int.parse
+        purchaseUnitPrice: double.parse(_purchaseAmountController.text), // Changed parameter name
+        totalAmount: int.parse(_quantityController.text) * double.parse(_purchaseAmountController.text), // Calculate totalAmount, quantity is int
         purchaseDate: _selectedDate, // Use purchaseDate
-        // customerId is not part of Purchase model
+        productName: _productNameController.text.trim(), // Added missing productName
       );
 
       if (widget.purchaseIndex != null) {
@@ -104,12 +112,12 @@ class EditPurchaseScreenState extends State<EditPurchaseScreen> {
 
         if (oldPurchase != null) {
            // Revert stock changes from the old purchase
-          await _updateStock(oldPurchase.productName, -oldPurchase.quantity);
+          await _updateStock(oldPurchase.productId, -oldPurchase.quantity); // Changed arguments
         }
 
 
         // Update stock changes for the new purchase
-        await _updateStock(newPurchase.productName, newPurchase.quantity);
+        await _updateStock(newPurchase.productId, newPurchase.quantity); // Changed arguments
 
         // Save the updated purchase to Hive
         // Assuming AppData.updatePurchase exists and takes Purchase object
@@ -127,8 +135,8 @@ class EditPurchaseScreenState extends State<EditPurchaseScreen> {
         // Adding new purchase
         // Assuming AppData.addPurchase exists and takes Purchase object
         // Based on app_data.dart, addPurchase exists and takes Purchase object
-        await AppData.addPurchase(newPurchase);
-        await _updateStock(newPurchase.productName, newPurchase.quantity);
+    await AppData.addPurchase(newPurchase);
+    await _updateStock(newPurchase.productId, newPurchase.quantity); // Changed arguments
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -143,9 +151,9 @@ class EditPurchaseScreenState extends State<EditPurchaseScreen> {
     }
   }
 
-  Future<void> _updateStock(String productName, double quantityChange) async {
+  Future<void> _updateStock(String productId, int quantityChange) async { // Changed parameters
     final Product? existingProduct = AppData.productsBox.values.firstWhereOrNull(
-      (p) => p.name.toLowerCase() == productName.toLowerCase(),
+      (p) => p.id == productId, // Changed lookup to use ID
     );
 
 
@@ -154,6 +162,7 @@ class EditPurchaseScreenState extends State<EditPurchaseScreen> {
       final updatedProduct = Product(
         id: existingProduct.id, // Use existing ID
         name: existingProduct.name,
+        description: existingProduct.description, // Added description
         currentStock: existingProduct.currentStock + quantityChange, // Add or subtract quantity
         unit: existingProduct.unit,
         purchasePrice: existingProduct.purchasePrice,
@@ -166,7 +175,7 @@ class EditPurchaseScreenState extends State<EditPurchaseScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Product "$productName" not found in stock. Stock not updated.',
+              'Product with ID "$productId" not found in stock. Stock not updated.',
             ),
           ),
         );

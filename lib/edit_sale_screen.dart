@@ -23,7 +23,7 @@ class EditSaleScreenState extends State<EditSaleScreen> {
   @override
   void initState() {
     super.initState();
-    _customerNameController = TextEditingController(text: widget.sale?.productName ?? '');
+    _customerNameController = TextEditingController(text: widget.sale?.productId ?? '');
     _amountController = TextEditingController(text: widget.sale?.totalAmount.toString() ?? '');
     _dateController = TextEditingController(text: widget.sale?.saleDate.toString() ?? '');
   }
@@ -49,7 +49,7 @@ class EditSaleScreenState extends State<EditSaleScreen> {
         child: Center(
           child: Text(
             widget.sale != null
-                ? 'Edit screen for sale to ${widget.sale!.productName} (Index: ${widget.saleIndex})'
+                ? 'Edit screen for sale to ${widget.sale!.productId} (Index: ${widget.saleIndex})'
                 : 'Add New Sale Screen',
             style: const TextStyle(fontSize: 20),
           ),

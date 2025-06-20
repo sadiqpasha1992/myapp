@@ -19,6 +19,7 @@ class _StockSummaryScreenState extends State<StockSummaryScreen> {
   String _searchQuery = '';
 
   final TextEditingController _productNameController = TextEditingController();
+  final TextEditingController _descriptionController = TextEditingController(); // Add description controller
   final TextEditingController _currentStockController =
       TextEditingController(); // Renamed to currentStock
   final TextEditingController _unitPriceController =
@@ -40,6 +41,7 @@ class _StockSummaryScreenState extends State<StockSummaryScreen> {
   void dispose() {
     _searchController.dispose();
     _productNameController.dispose();
+    _descriptionController.dispose(); // Dispose description controller
     _currentStockController.dispose(); // Dispose correct controller
     _unitPriceController.dispose(); // Dispose correct controller
     _unitController.dispose(); // Dispose unit controller
@@ -54,7 +56,8 @@ class _StockSummaryScreenState extends State<StockSummaryScreen> {
     }
 
     final String name = _productNameController.text.trim();
-    final double? currentStock = double.tryParse(
+    final String description = _descriptionController.text.trim(); // Get description value
+    final double? currentStockDouble = double.tryParse( // Parse as double first
       _currentStockController.text.trim(),
     );
     final double? unitPrice = double.tryParse(_unitPriceController.text.trim());
@@ -62,7 +65,16 @@ class _StockSummaryScreenState extends State<StockSummaryScreen> {
     final double? purchasePrice = double.tryParse(_purchasePriceController.text.trim()); // Get purchase price value
 
 
-    if (currentStock == null || currentStock < 0) {
+    if (description.isEmpty) { // Validate description
+       ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter the description!'),
+        ),
+      );
+      return;
+    }
+
+    if (currentStockDouble == null || currentStockDouble < 0) { // Check double parse result
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -120,11 +132,14 @@ class _StockSummaryScreenState extends State<StockSummaryScreen> {
       return; // Return if product exists
     }
   
+    final int currentStock = currentStockDouble.toInt(); // Convert to int
+
     // Create new Product object
     final newProduct = Product(
       id: const Uuid().v4(), // Generate unique ID
       name: name,
-      currentStock: currentStock,
+      description: description, // Pass description
+      currentStock: currentStock, // Pass converted int
       unitPrice: unitPrice,
       unit: unit, // Pass unit
       purchasePrice: purchasePrice, // Pass purchasePrice
@@ -246,6 +261,27 @@ class _StockSummaryScreenState extends State<StockSummaryScreen> {
               },
             ),
             const SizedBox(height: 16),
+
+            // Description Text Field
+            TextFormField(
+              controller: _descriptionController,
+              decoration: const InputDecoration(
+                labelText: 'Description',
+                hintText: 'e.g., High-quality Arabica beans',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(8.0)),
+                ),
+                prefixIcon: Icon(Icons.description),
+              ),
+              keyboardType: TextInputType.text,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter product description';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16), // Space
 
             // Current Stock Text Field
             TextFormField(

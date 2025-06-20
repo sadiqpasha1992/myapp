@@ -26,7 +26,7 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
   void initState() {
     super.initState();
     // Initialize controllers with current purchase data
-    _supplierNameController = TextEditingController(text: widget.purchase.supplierId ?? ''); // Assuming supplierId is used for display or linking
+    _supplierNameController = TextEditingController(text: widget.purchase.supplierId); // Assuming supplierId is used for display or linking
     _productNameController = TextEditingController(text: widget.purchase.productName);
     _quantityController = TextEditingController(text: widget.purchase.quantity.toString()); // Keep as string for text field
     _purchaseAmountController = TextEditingController(text: widget.purchase.totalAmount.toString()); // Use totalAmount
@@ -129,11 +129,12 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
 
                 if (productIndex != -1) {
                   final Product existingProduct = productsInStock[productIndex];
-                  final double purchasedQuantity = widget.purchase.quantity;
+                  final int purchasedQuantity = widget.purchase.quantity; // Changed to int
                   final updatedProduct = Product(
                     id: existingProduct.id,
                     name: existingProduct.name,
-                    currentStock: existingProduct.currentStock - purchasedQuantity,
+                    description: '', // Added missing description
+                    currentStock: existingProduct.currentStock - purchasedQuantity, // Removed round()
                     unit: existingProduct.unit,
                     purchasePrice: existingProduct.purchasePrice,
                     unitPrice: existingProduct.unitPrice,
@@ -190,10 +191,10 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
       return;
     }
 
-    final double oldQuantity = widget.purchase.quantity; // quantity is already double
-    final double? newQuantity = double.tryParse(newQuantityStr);
+    final int oldQuantity = widget.purchase.quantity; // Changed to int
+    final int? newQuantity = int.tryParse(newQuantityStr); // Changed to int
 
-    if (newQuantity == null || newQuantity <= 0) {
+    if (newQuantity == null || newQuantity <= 0) { // Updated validation for int
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter a valid positive quantity for the edited purchase!')),
       );
@@ -202,7 +203,7 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
 
     // --- Stock Management for Edit Operation ---
     // Calculate the change in quantity
-    double quantityDifference = newQuantity - oldQuantity;
+    int quantityDifference = newQuantity - oldQuantity; // Changed to int
 
     // Find the product in stock (old and new product names)
     final List<Product> productsInStock = AppData.productsBox.values.toList();
@@ -212,12 +213,13 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
     // Revert old product stock if product name changed or quantity increased (because it's a purchase)
     if (oldProductIndex != -1 && (widget.purchase.productName.toLowerCase() != newProductName.toLowerCase() || quantityDifference > 0)) {
       final Product oldProduct = productsInStock[oldProductIndex];
-      final double quantityToRevert = widget.purchase.productName.toLowerCase() != newProductName.toLowerCase()
+      final int quantityToRevert = widget.purchase.productName.toLowerCase() != newProductName.toLowerCase()
           ? oldQuantity // Revert full old quantity if product name changed
           : quantityDifference; // Revert only the increase if product name is same
       final updatedOldProduct = Product(
           id: oldProduct.id,
           name: oldProduct.name,
+          description: '', // Added missing description
           currentStock: oldProduct.currentStock - quantityToRevert,
           unit: oldProduct.unit,
           purchasePrice: oldProduct.purchasePrice,
@@ -234,7 +236,8 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
          final updatedNewProduct = Product(
           id: newProduct.id,
           name: newProduct.name,
-          currentStock: newProduct.currentStock + quantityDifference,
+          description: '', // Added missing description
+          currentStock: newProduct.currentStock + quantityDifference, // Removed round()
           unit: newProduct.unit,
           purchasePrice: newProduct.purchasePrice,
           unitPrice: newProduct.unitPrice,
@@ -251,7 +254,8 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
          final updatedNewProduct = Product(
           id: newProduct.id,
           name: newProduct.name,
-          currentStock: newProduct.currentStock + newQuantity,
+          description: '', // Added missing description
+          currentStock: newProduct.currentStock + newQuantity, // Removed round()
           unit: newProduct.unit,
           purchasePrice: newProduct.purchasePrice,
           unitPrice: newProduct.unitPrice,
@@ -264,7 +268,8 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
       final newProduct = Product(
         id: DateTime.now().millisecondsSinceEpoch.toString(), // Generate a simple unique ID
         name: newProductName,
-        currentStock: newQuantity.toDouble(),
+        description: '', // Added missing description
+        currentStock: newQuantity, // Removed round()
         unit: 'Pcs', // Default unit for new product
         purchasePrice: double.tryParse(newPurchaseAmountStr) ?? 0.0,
         unitPrice: (double.tryParse(newPurchaseAmountStr) ?? 0.0) * 1.2, // Use unitPrice (selling price)
@@ -278,8 +283,8 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
       id: widget.purchase.id, // Keep the original ID
       productId: widget.purchase.productId, // Keep the original product ID or update if needed? Assuming keep for now.
       productName: newProductName,
-      quantity: newQuantity, // Use the parsed double quantity
-      unitPrice: widget.purchase.unitPrice, // Keep original unit price or calculate? Assuming keep.
+      quantity: newQuantity, // Removed round()
+      purchaseUnitPrice: widget.purchase.purchaseUnitPrice, // Added missing purchaseUnitPrice
       totalAmount: double.tryParse(newPurchaseAmountStr) ?? 0.0, // Use totalAmount
       purchaseDate: _selectedDate, // Use purchaseDate
       supplierId: newSupplierName, // Assuming supplierName input is used for supplierId
@@ -386,8 +391,8 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
                       _buildDetailRow('Total Amount:', '₹ ${widget.purchase.totalAmount}', Icons.currency_rupee), // Use totalAmount
                       _buildDetailRow('Purchase Date:', '${widget.purchase.purchaseDate.day}/${widget.purchase.purchaseDate.month}/${widget.purchase.purchaseDate.year}', Icons.calendar_today), // Use purchaseDate
                       // Optionally display supplierId if needed
-                      if (widget.purchase.supplierId != null && widget.purchase.supplierId!.isNotEmpty)
-                         _buildDetailRow('Supplier ID:', widget.purchase.supplierId!, Icons.local_shipping),
+                      if (widget.purchase.supplierId.isNotEmpty)
+                         _buildDetailRow('Supplier ID:', widget.purchase.supplierId, Icons.local_shipping),
                       const SizedBox(height: 30),
                       Center(
                         child: ElevatedButton.icon(

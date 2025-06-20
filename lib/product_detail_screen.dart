@@ -20,6 +20,7 @@ class ProductDetailScreen extends StatefulWidget {
 
 class _ProductDetailScreenState extends State<ProductDetailScreen> {
   late TextEditingController _nameController;
+  late TextEditingController _descriptionController; // Add description controller
   late TextEditingController _quantityController;
   late TextEditingController _unitController;
   late TextEditingController _purchasePriceController;
@@ -34,6 +35,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final initialProduct = widget.productId != null ? AppData.productsBox.get(widget.productId!) : null;
 
     _nameController = TextEditingController(text: initialProduct?.name ?? '');
+    _descriptionController = TextEditingController(text: initialProduct?.description ?? ''); // Initialize description controller
     _quantityController = TextEditingController(
       text: initialProduct?.currentStock.toString() ?? '', // Use currentStock
     );
@@ -51,6 +53,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _descriptionController.dispose(); // Dispose description controller
     _quantityController.dispose();
     _unitController.dispose();
     _purchasePriceController.dispose();
@@ -179,6 +182,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   // Method to save edited product details
   void _saveEditedProduct() async {
     final String newName = _nameController.text.trim();
+    final String newDescription = _descriptionController.text.trim(); // Get description
     final String newQuantityStr = _quantityController.text.trim();
     final String newUnit = _unitController.text.trim();
     final String newPurchasePriceStr = _purchasePriceController.text.trim();
@@ -186,6 +190,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
     // Basic validation
     if (newName.isEmpty ||
+        newDescription.isEmpty || // Validate description
         newQuantityStr.isEmpty ||
         newUnit.isEmpty ||
         newPurchasePriceStr.isEmpty ||
@@ -198,12 +203,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       return;
     }
 
-    final double? newQuantity = double.tryParse(newQuantityStr);
+    final double? newQuantityDouble = double.tryParse(newQuantityStr); // Parse as double first
     final double? newPurchasePrice = double.tryParse(newPurchasePriceStr);
     final double? newSellingPrice = double.tryParse(newSellingPriceStr);
 
-    if (newQuantity == null ||
-        newQuantity < 0 ||
+    if (newQuantityDouble == null || // Check double parse result
+        newQuantityDouble < 0 ||
         newPurchasePrice == null ||
         newPurchasePrice < 0 ||
         newSellingPrice == null ||
@@ -217,6 +222,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       );
       return;
     }
+
+    final int newQuantity = newQuantityDouble.toInt(); // Convert to int
 
     // Handle potential product name change and check for duplicates (excluding current product if editing)
     final existingProducts = AppData.productsBox.values.toList();
@@ -241,7 +248,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       // Generate new ID if adding, use existing if editing
       id: widget.productId ?? const Uuid().v4(),
       name: newName,
-      currentStock: double.tryParse(_quantityController.text) ?? 0.0, // Use currentStock
+      description: newDescription, // Include description
+      currentStock: newQuantity, // Use the converted int quantity
       unitPrice: double.tryParse(_sellingPriceController.text) ?? 0.0, // Use unitPrice
       unit: newUnit, // Use unit
       purchasePrice: double.tryParse(newPurchasePriceStr) ?? 0.0, // Use purchasePrice
@@ -285,7 +293,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             ? Product(
               id: widget.productId ?? const Uuid().v4(), // Placeholder ID if adding
               name: _nameController.text,
-              currentStock: double.tryParse(_quantityController.text) ?? 0.0,
+              description: _descriptionController.text, // Include description
+              currentStock: int.tryParse(_quantityController.text) ?? 0, // Parse as int
               unitPrice: double.tryParse(_sellingPriceController.text) ?? 0.0,
               unit: _unitController.text,
               purchasePrice: double.tryParse(_purchasePriceController.text) ?? 0.0,
@@ -336,6 +345,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         _nameController,
                         'Product Name',
                         Icons.inventory_2,
+                        TextInputType.text,
+                      ),
+                       _buildEditableField( // Add description field
+                        _descriptionController,
+                        'Description',
+                        Icons.description,
                         TextInputType.text,
                       ),
                       _buildEditableField(
@@ -395,6 +410,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
                             color: Colors.teal,
+                          ),
+                        ),
+                         Text( // Display description
+                          'Description: ${displayProduct.description}',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontStyle: FontStyle.italic,
+                            color: Colors.grey[600],
                           ),
                         ),
                         const Divider(height: 30, thickness: 1.5),

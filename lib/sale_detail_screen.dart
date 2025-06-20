@@ -39,8 +39,10 @@ class _SaleDetailScreenState extends State<SaleDetailScreen> {
     _customerNameController = TextEditingController(
       text: customer?.name ?? 'Unknown Customer',
     );
+    // Retrieve product name from Product using productId
+    final product = AppData.productsBox.get(widget.sale.productId);
     _productNameController = TextEditingController(
-      text: widget.sale.productName,
+      text: product?.name ?? 'Unknown Product', // Use product name, handle null
     );
     _quantityController = TextEditingController(text: widget.sale.quantity.toString());
     _saleAmountController = TextEditingController(text: widget.sale.totalAmount.toString()); // Use totalAmount
@@ -142,7 +144,7 @@ class _SaleDetailScreenState extends State<SaleDetailScreen> {
           ),
           title: const Text('Confirm Deletion'),
           content: Text(
-            'Are you sure you want to delete the sale to "${_customerNameController.text}" for "${widget.sale.productName}"? This action cannot be undone and will affect stock levels.',
+            'Are you sure you want to delete the sale to "${_customerNameController.text}" for "${_productNameController.text}"? This action cannot be undone and will affect stock levels.', // Use controller text for product name
           ),
           actions: <Widget>[
             TextButton(
@@ -156,39 +158,46 @@ class _SaleDetailScreenState extends State<SaleDetailScreen> {
                 Navigator.of(dialogContext).pop(); // Close the dialog
 
                 // 1. Revert Stock Change (Important for data integrity)
-                final List<Product> productsInStock =
-                    AppData.productsBox.values.toList();
-                final int productIndex = productsInStock.indexWhere(
-                  (p) =>
-                      p.name.toLowerCase() ==
-                      widget.sale.productName.toLowerCase(),
-                );
+                // Fetch the product using productId from the sale object
+                final Product? soldProduct = AppData.productsBox.get(widget.sale.productId);
 
-                if (productIndex != -1) {
-                  final Product existingProduct = productsInStock[productIndex];
-                  final double soldQuantity = widget.sale.quantity; // quantity is already double
-                  final updatedProduct = Product(
-                    id: existingProduct.id,
-                    name: existingProduct.name,
-                    currentStock:
-                        existingProduct.currentStock +
-                        soldQuantity, // Revert: Add quantity back
-                    unit: existingProduct.unit,
-                    purchasePrice: existingProduct.purchasePrice,
-                    unitPrice: existingProduct.unitPrice, // Use unitPrice
-                  );
-                  await AppData.productsBox.putAt(productIndex, updatedProduct);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Stock quantity reverted.')),
+                if (soldProduct != null) {
+                  final int productIndex = AppData.productsBox.values.toList().indexWhere((p) => p.id == soldProduct.id);
+
+                  if (productIndex != -1) {
+                    final int soldQuantity = widget.sale.quantity; // Use int quantity from Sale model
+                    final updatedProduct = Product(
+                      id: soldProduct.id,
+                      name: soldProduct.name,
+                      description: soldProduct.description, // Keep existing description
+                      currentStock: soldProduct.currentStock + soldQuantity, // Revert: Add quantity back (int arithmetic)
+                      unit: soldProduct.unit,
+                      purchasePrice: soldProduct.purchasePrice,
+                      unitPrice: soldProduct.unitPrice,
                     );
+                    await AppData.productsBox.putAt(productIndex, updatedProduct);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Stock quantity reverted.')),
+                      );
+                    }
+                  } else {
+                     if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Product with ID "${widget.sale.productId}" not found in stock by index. Stock not reverted.',
+                          ),
+                        ),
+                      );
+                    }
                   }
                 } else {
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
-                          'Product "${widget.sale.productName}" not found in stock. Stock not reverted.',
+                          'Product with ID "${widget.sale.productId}" not found in stock. Stock not reverted.',
                         ),
                       ),
                     );
@@ -238,8 +247,8 @@ class _SaleDetailScreenState extends State<SaleDetailScreen> {
       return;
     }
 
-    final double oldQuantity = widget.sale.quantity; // quantity is already double
-    final double? newQuantity = double.tryParse(newQuantityStr);
+    final int oldQuantity = widget.sale.quantity; // Use int quantity from Sale model
+    final int? newQuantity = int.tryParse(newQuantityStr); // Parse as int
 
     if (newQuantity == null || newQuantity <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -254,69 +263,68 @@ class _SaleDetailScreenState extends State<SaleDetailScreen> {
 
     // --- Stock Management for Edit Operation ---
     // Calculate the change in quantity
-    double quantityDifference = newQuantity - oldQuantity;
+    int quantityDifference = newQuantity - oldQuantity; // Use int arithmetic
 
     // Find the product in stock (old and new product names)
     final List<Product> productsInStock = AppData.productsBox.values.toList();
-    final int oldProductIndex = productsInStock.indexWhere(
-      (p) => p.name.toLowerCase() == widget.sale.productName.toLowerCase(),
-    );
-    final int newProductIndex = productsInStock.indexWhere(
-      (p) => p.name.toLowerCase() == newProductName.toLowerCase(),
-    );
 
-    // Revert old product stock if product name changed or quantity decreased
-    if (oldProductIndex != -1 &&
-        (widget.sale.productName.toLowerCase() !=
-                newProductName.toLowerCase() ||
-            quantityDifference < 0)) {
-      final Product oldProduct = productsInStock[oldProductIndex];
-      final double quantityToRevert =
-          widget.sale.productName.toLowerCase() != newProductName.toLowerCase()
-              ? oldQuantity // Revert full old quantity if product name changed
-              : -quantityDifference; // Revert only the decrease if product name is same
-      final updatedOldProduct = Product(
-        id: oldProduct.id,
-        name: oldProduct.name,
-        currentStock: oldProduct.currentStock + quantityToRevert,
-        unit: oldProduct.unit,
-        purchasePrice: oldProduct.purchasePrice,
-        unitPrice: oldProduct.unitPrice, // Use unitPrice
-      );
-      await AppData.productsBox.putAt(oldProductIndex, updatedOldProduct);
+    // Fetch the new product by name to get its details
+    final Product? newProduct = productsInStock.firstWhereOrNull(
+        (p) => p.name.toLowerCase() == newProductName.toLowerCase());
+
+    // Find the old product by ID from the sale object
+    final Product? oldProduct = AppData.productsBox.get(widget.sale.productId);
+
+
+    // Revert old product stock if product changed or quantity decreased
+    if (oldProduct != null) {
+      final int oldProductIndex = productsInStock.indexWhere((p) => p.id == oldProduct.id);
+      if (oldProductIndex != -1) {
+        final int quantityToRevert = // Use int
+            oldProduct.id != newProduct?.id // Revert full old quantity if product changed
+                ? oldQuantity
+                : (quantityDifference < 0 ? -quantityDifference : 0); // Revert only the decrease if product is same
+        final updatedOldProduct = Product(
+          id: oldProduct.id,
+          name: oldProduct.name,
+          description: oldProduct.description, // Keep existing description
+          currentStock: oldProduct.currentStock + quantityToRevert, // Use int arithmetic
+          unit: oldProduct.unit,
+          purchasePrice: oldProduct.purchasePrice,
+          unitPrice: oldProduct.unitPrice, // Use unitPrice
+        );
+        await AppData.productsBox.putAt(oldProductIndex, updatedOldProduct);
+      }
     }
 
     // Apply new product stock update
-    if (newProductIndex != -1) {
-      final Product newProduct = productsInStock[newProductIndex];
-      // Only update if product name is the same OR if it's a new product for this entry
-      if (widget.sale.productName.toLowerCase() ==
-          newProductName.toLowerCase()) {
-        final updatedNewProduct = Product(
-          id: newProduct.id,
-          name: newProduct.name,
-          currentStock:
-              newProduct.currentStock - quantityDifference, // Apply the net change
-          unit: newProduct.unit,
-          purchasePrice: newProduct.purchasePrice,
-          unitPrice: newProduct.unitPrice, // Use unitPrice
-        );
-        await AppData.productsBox.putAt(newProductIndex, updatedNewProduct);
+    if (newProduct != null) {
+      final int newProductIndex = productsInStock.indexWhere((p) => p.id == newProduct.id);
+      if (newProductIndex != -1) {
+         final updatedNewProduct = Product(
+           id: newProduct.id,
+           name: newProduct.name,
+           description: newProduct.description, // Keep existing description
+           currentStock: newProduct.currentStock - newQuantity, // Decrement new quantity (int arithmetic)
+           unit: newProduct.unit,
+           purchasePrice: newProduct.purchasePrice,
+           unitPrice: newProduct.unitPrice,
+         );
+         await AppData.productsBox.putAt(newProductIndex, updatedNewProduct);
       } else {
-        // New product name, decrement stock for this product
-        final updatedNewProduct = Product(
-          id: newProduct.id,
-          name: newProduct.name,
-          currentStock: newProduct.currentStock - newQuantity,
-          unit: newProduct.unit,
-          purchasePrice: newProduct.purchasePrice,
-          unitPrice: newProduct.unitPrice, // Use unitPrice
-        );
-        await AppData.productsBox.putAt(newProductIndex, updatedNewProduct);
+         if (mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(
+             SnackBar(
+               content: Text(
+                 'New product "$newProductName" found by name but not by ID. Stock not updated.',
+               ),
+             ),
+           );
+         }
       }
+
     } else {
       // New product name not found in stock, cannot proceed with sale.
-      // Or if it was a new product, it needs to exist to decrement.
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -330,44 +338,40 @@ class _SaleDetailScreenState extends State<SaleDetailScreen> {
     }
     // --- End Stock Management for Edit ---
 
-    // Find the new product to get its ID if the product name changed
-    String updatedProductId = widget.sale.productId;
-    // Re-fetch or use the list from above if still valid
-    if (widget.sale.productName.toLowerCase() != newProductName.toLowerCase()) {
-       final newProduct = productsInStock.firstWhereOrNull(
-           (p) => p.name.toLowerCase() == newProductName.toLowerCase());
-       if (newProduct != null) {
-           updatedProductId = newProduct.id;
-       } else {
-           // This case should ideally be caught by the product not found check earlier,
-           // but adding a safeguard here.
-           if (mounted) {
-               ScaffoldMessenger.of(context).showSnackBar(
-                   SnackBar(
-                       content: Text(
-                           'Error finding new product ID for "$newProductName".',
-                       ),
-                   ),
-               );
-           }
-           return; // Stop update
-       }
+    // Find the new product to get its ID
+    String updatedProductId = '';
+    final Product? productForId = AppData.productsBox.values.firstWhereOrNull(
+        (p) => p.name.toLowerCase() == newProductName.toLowerCase());
+
+    if (productForId != null) {
+        updatedProductId = productForId.id;
+    } else {
+        if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                    content: Text(
+                        'Error finding new product ID for "$newProductName".',
+                    ),
+                ),
+            );
+            return; // Stop update
+        }
     }
 
     final double parsedTotalAmount = double.tryParse(newSaleAmountStr) ?? 0.0;
-    final double calculatedUnitPrice = newQuantity > 0 ? parsedTotalAmount / newQuantity : 0.0;
+    // Calculate unit price based on new quantity and total amount
+    final double calculatedSaleUnitPrice = newQuantity > 0 ? parsedTotalAmount / newQuantity : 0.0;
 
 
     // Create an updated Sale object
     final updatedSale = Sale(
       id: widget.sale.id, // Use existing ID
+      customerId: widget.sale.customerId, // Use existing customer ID
       productId: updatedProductId, // Use updated product ID
-      productName: newProductName,
-      quantity: newQuantity, // Use parsed double
-      unitPrice: calculatedUnitPrice, // Calculate unit price
+      quantity: newQuantity, // Use parsed int
+      saleUnitPrice: calculatedSaleUnitPrice, // Calculate sale unit price
       totalAmount: parsedTotalAmount, // Use parsed total amount
       saleDate: _selectedDate, // Use selected date
-      customerId: widget.sale.customerId, // Use existing customer ID
     );
 
     // Update the sale in Hive at its original index
@@ -501,12 +505,12 @@ class _SaleDetailScreenState extends State<SaleDetailScreen> {
                       const Divider(height: 30, thickness: 1.5),
                       _buildDetailRow(
                         'Product Name:',
-                        widget.sale.productName,
+                        _productNameController.text, // Use controller text
                         Icons.inventory_2,
                       ),
                       _buildDetailRow(
                         'Quantity:',
-                        widget.sale.quantity.toString(), // Convert double to String for display
+                        widget.sale.quantity.toString(), // Convert int to String for display
                         Icons.numbers,
                       ),
                       _buildDetailRow(

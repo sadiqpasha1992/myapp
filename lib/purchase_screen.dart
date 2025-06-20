@@ -38,10 +38,10 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
     final String supplierName = _supplierNameController.text.trim();
     final String productName = _productNameController.text.trim();
-    final double? quantity = double.tryParse(_quantityController.text.trim());
+    final int? quantity = int.tryParse(_quantityController.text.trim()); // Change to int
     final double? unitPrice = double.tryParse(_unitPriceController.text.trim());
 
-    if (quantity == null || quantity <= 0) {
+    if (quantity == null || quantity <= 0) { // Check for valid positive int
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please enter a valid positive quantity!'),
@@ -70,7 +70,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
     if (existingProduct != null) {
       // Product found, update its currentStock and unitPrice
-      existingProduct.currentStock += quantity;
+      existingProduct.currentStock += quantity; // Add quantity to stock
       existingProduct.unitPrice = unitPrice; // Update unit price with latest purchase price
       await existingProduct.save(); // Save changes to the existing HiveObject
     } else {
@@ -78,11 +78,11 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       final newProduct = Product(
         id: const Uuid().v4(), // Generate unique ID for the product
         name: productName,
-        currentStock: quantity,
-        unitPrice: unitPrice,
+        description: productName, // Add required description
+        currentStock: quantity, // quantity is now int, use ! as validated
+        unitPrice: unitPrice, // Add required unitPrice (sale price), use ! as validated
+        purchasePrice: unitPrice, // Add required purchasePrice, use ! as validated
         unit: '', // Assuming a default empty string for unit
-        purchasePrice: unitPrice, // Using the unitPrice from the purchase as the initial purchasePrice for the product
-        // Assuming Product model has id, name, currentStock, unitPrice, unit, purchasePrice
       );
       await AppData.productsBox.put(newProduct.id, newProduct); // Add new product to box
       existingProduct = newProduct; // Use the new product for the purchase link
@@ -93,15 +93,15 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     final newPurchase = Purchase(
       id: const Uuid().v4(), // Generate unique ID for the purchase
       productId: existingProduct.id, // Link to the product ID
-      productName: productName,
-      quantity: quantity,
-      unitPrice: unitPrice,
-      totalAmount: quantity * unitPrice,
+      productName: productName, // Add required productName
+      quantity: quantity, // quantity is now int, use ! as validated
+      purchaseUnitPrice: unitPrice, // Add required purchaseUnitPrice, use ! as validated
+      totalAmount: quantity * unitPrice, // Use int quantity and double unitPrice, use ! as validated
       purchaseDate: DateTime.now(),
       supplierId:
           supplierName.isNotEmpty
               ? supplierName
-              : null, // Optional: Link to Party ID
+              : '', // Assign empty string if supplierName is empty
     );
 
     try {
@@ -208,8 +208,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 if (value == null || value.isEmpty) {
                   return 'Please enter quantity';
                 }
-                if (double.tryParse(value) == null ||
-                    double.tryParse(value)! <= 0) {
+                if (int.tryParse(value) == null || // Check for int
+                    int.tryParse(value)! <= 0) { // Check for positive int
                   return 'Please enter a valid positive number';
                 }
                 return null;
@@ -332,7 +332,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                                   color: Colors.orange,
                                 ),
                                 title: Text(
-                                  '${purchase.supplierId ?? 'Unknown Supplier'} - ${purchase.productName}', // Use supplierId now
+                                  '${purchase.supplierId} - ${purchase.productName}', // Use supplierId now
                                   style: const TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,

@@ -30,11 +30,9 @@ Future<void> saveAndLaunchInvoice(
   final url = web.URL.createObjectURL(blob);
   // Get customer name from Party box
   String customerName = 'UnknownCustomer'; // Default name
-  if (selectedSale.customerId != null) {
-    final party = AppData.partiesBox.get(selectedSale.customerId!);
-    if (party != null) {
-      customerName = party.name;
-    }
+  final party = AppData.partiesBox.get(selectedSale.customerId);
+  if (party != null) {
+    customerName = party.name;
   }
   final String filename = 'invoice_${customerName}_${selectedSale.saleDate.millisecondsSinceEpoch}.pdf';
 

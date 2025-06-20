@@ -92,13 +92,12 @@ class _SalesScreenState extends State<SalesScreen> {
 
     final newSale = Sale(
       id: const Uuid().v4(), // Generate a unique ID for the sale
+      customerId: '', // Added missing customerId (temporary fix)
       productId: _selectedProduct!.id,
-      productName: _selectedProduct!.name,
-      quantity: quantity,
-      unitPrice: unitPrice,
+      quantity: quantity.round(), // Changed to int and rounded
+      saleUnitPrice: unitPrice, // Changed parameter name
       totalAmount: totalAmount,
       saleDate: DateTime.now(),
-      // customerId: _customerNameController.text.isNotEmpty ? _customerNameController.text : null, // If you link to Party
     );
 
     try {
@@ -278,11 +277,15 @@ class _SalesScreenState extends State<SalesScreen> {
                   itemCount: sales.length,
                   itemBuilder: (context, index) {
                     final sale = sales[index];
+                    // Fetch the product to display its name
+                    final product = AppData.productsBox.get(sale.productId);
+                    final productName = product?.name ?? 'Unknown Product';
+
                     return Card(
                       margin: const EdgeInsets.symmetric(vertical: 4),
                       child: ListTile(
                         title: Text(
-                          '${sale.productName} - ${sale.quantity} Qty',
+                          '$productName - ${sale.quantity} Qty', // Use fetched product name
                         ),
                         subtitle: Text(
                           '₹${sale.totalAmount.toStringAsFixed(2)} on ${sale.saleDate.toLocal().toString().split(' ')[0]}',

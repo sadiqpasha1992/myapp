@@ -1,158 +1,165 @@
 // lib/models/models.dart
 import 'package:hive/hive.dart';
 
-part 'models.g.dart'; // This line is crucial for Hive generation
+part 'models.g.dart'; // This line generates the adapter code
 
-@HiveType(typeId: 0)
-class Product extends HiveObject {
+// === Sale Model ===
+@HiveType(typeId: 0) // Ensure typeId is unique across all models
+class Sale extends HiveObject {
   @HiveField(0)
-  late String id; // Unique ID for the product
+  String id; // Add ID field
   @HiveField(1)
-  late String name;
+  String customerId; // Add customer ID field
   @HiveField(2)
-  late double currentStock; // Represents the current quantity in stock
+  String productId; // Add product ID field
   @HiveField(3)
-  late double unitPrice; // Selling price
-  @HiveField(6) // Assign a new typeId
-  late String unit;
-  @HiveField(7) // Assign a new typeId
-  late double purchasePrice;
+  int quantity; // Add quantity field
+  @HiveField(4)
+  double saleUnitPrice; // Add sale unit price field
+  @HiveField(5)
+  double totalAmount;
+  @HiveField(6)
+  DateTime saleDate;
 
-  Product({
+  Sale({
     required this.id,
-    required this.name,
-    required this.currentStock,
-    required this.unitPrice,
-    required this.unit,
-    required this.purchasePrice,
+    required this.customerId,
+    required this.productId,
+    required this.quantity,
+    required this.saleUnitPrice,
+    required this.totalAmount,
+    required this.saleDate,
   });
 }
 
-@HiveType(typeId: 4) // Assign a unique typeId
-class CashTransaction extends HiveObject {
+// === Expense Model ===
+@HiveType(typeId: 5) // Ensure this typeId is unique
+class Expense extends HiveObject {
   @HiveField(0)
-  late String description;
+  DateTime date;
   @HiveField(1)
-  late double amount;
+  String description;
   @HiveField(2)
-  late String type; // 'Inflow' or 'Outflow'
+  double amount;
   @HiveField(3)
-  late DateTime date;
-  @HiveField(4)
-  late String category;
+  String category; // Add category field
 
-  CashTransaction({
+  Expense({
+    required this.date,
     required this.description,
     required this.amount,
-    required this.type,
-    required this.date,
     required this.category,
   });
 }
 
-@HiveType(typeId: 1)
+// === Purchase Model ===
+@HiveType(typeId: 1) // Ensure typeId is unique
 class Purchase extends HiveObject {
   @HiveField(0)
-  late String id;
+  String id; // Add ID field
   @HiveField(1)
-  late String productId; // Link to the product via its ID
+  String supplierId; // Add supplier ID field
   @HiveField(2)
-  late String productName; // For display convenience
+  String productId; // Add product ID field
   @HiveField(3)
-  late double quantity;
+  int quantity; // Add quantity field
   @HiveField(4)
-  late double unitPrice;
+  double purchaseUnitPrice; // Add purchase unit price field
   @HiveField(5)
-  late double totalAmount; // Consistent with the new logic
+  double totalAmount;
   @HiveField(6)
-  late DateTime purchaseDate; // Consistent with the new logic
-  @HiveField(7)
-  String? supplierId; // Optional: Link to a Party ID
+  DateTime purchaseDate;
+  @HiveField(7) // Add new field for product name
+  String productName;
 
   Purchase({
     required this.id,
+    required this.supplierId,
     required this.productId,
-    required this.productName,
     required this.quantity,
-    required this.unitPrice,
+    required this.purchaseUnitPrice,
     required this.totalAmount,
     required this.purchaseDate,
-    this.supplierId,
+    required this.productName, // Add to constructor
   });
 }
 
-@HiveType(typeId: 2)
+// === Product Model ===
+@HiveType(typeId: 2) // Ensure typeId is unique
+class Product extends HiveObject {
+  @HiveField(0)
+  String id; // Add ID field
+  @HiveField(1)
+  String name;
+  @HiveField(2)
+  String description;
+  @HiveField(3)
+  double purchasePrice; // Add purchase price field
+  @HiveField(4)
+  double unitPrice; // Add unit price field (sale price)
+  @HiveField(5)
+  int currentStock; // Add current stock field
+  @HiveField(6)
+  String? unit; // e.g., 'kg', 'piece', 'liter'
+
+  Product({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.purchasePrice,
+    required this.unitPrice,
+    required this.currentStock,
+    this.unit,
+  });
+}
+
+// === CashTransaction Model (for Cash Book) ===
+@HiveType(typeId: 3) // Ensure typeId is unique
+class CashTransaction extends HiveObject {
+  @HiveField(0)
+  DateTime date;
+  @HiveField(1)
+  String description;
+  @HiveField(2)
+  double amount;
+  @HiveField(3)
+  String type; // 'Credit' or 'Debit' (or 'Income' / 'Expense')
+
+  CashTransaction({
+    required this.date,
+    required this.description,
+    required this.amount,
+    required this.type,
+  });
+}
+
+// === Party Model === (Modified: email field added)
+@HiveType(typeId: 4) // Ensure this typeId is unique
 class Party extends HiveObject {
   @HiveField(0)
-  late String id;
+  String id; // Add ID field
   @HiveField(1)
-  late String name;
+  String name;
   @HiveField(2)
-  late String type; // e.g., 'customer', 'supplier'
+  String type; // 'Customer' or 'Vendor'
   @HiveField(3)
-  late String contactNumber;
+  String? phone; // This seems to be the contact number field
   @HiveField(4)
-  late String address;
-  @HiveField(5) // Added GST number field
-  late String gstNumber; // New field for GST Number
-  // Add other fields as needed, e.g., outstanding balance
+  String? address;
+  @HiveField(5) // This field is for GST Number, as confirmed by you.
+  String? gstNumber;
+  @HiveField(
+    6,
+  ) // NEW FIELD for Email. Ensure this typeId is unique and sequential.
+  String? email;
 
   Party({
     required this.id,
     required this.name,
     required this.type,
-    required this.contactNumber,
-    required this.address,
-    required this.gstNumber,
-  });
-}
-
-@HiveType(typeId: 3)
-class Sale extends HiveObject {
-  @HiveField(0)
-  late String id;
-  @HiveField(1)
-  late String productId;
-  @HiveField(2)
-  late String productName;
-  @HiveField(3)
-  late double quantity;
-  @HiveField(4)
-  late double unitPrice;
-  @HiveField(5)
-  late double totalAmount; // Consistent with the new logic
-  @HiveField(6)
-  late DateTime saleDate; // Consistent with the new logic
-  @HiveField(7)
-  String? customerId; // Optional: Link to Party ID
-
-  Sale({
-    required this.id,
-    required this.productId,
-    required this.productName,
-    required this.quantity,
-    required this.unitPrice,
-    required this.totalAmount,
-    required this.saleDate,
-    this.customerId,
-  });
-}
-
-@HiveType(typeId: 5) // Assign a unique typeId
-class Expense extends HiveObject {
-  @HiveField(0)
-  late String description;
-  @HiveField(1)
-  late double amount;
-  @HiveField(2)
-  late DateTime date;
-  @HiveField(3)
-  late String category;
-
-  Expense({
-    required this.description,
-    required this.amount,
-    required this.date,
-    required this.category,
+    this.phone,
+    this.address,
+    this.gstNumber,
+    this.email, // Add to constructor
   });
 }

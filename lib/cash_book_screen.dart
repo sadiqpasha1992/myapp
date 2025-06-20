@@ -76,7 +76,6 @@ class _CashBookScreenState extends State<CashBookScreen> {
       amount: amount,
       type: _selectedType,
       date: _selectedDate,
-      category: category,
     );
 
     // Add to the Hive Box using AppData
@@ -375,9 +374,6 @@ class _CashBookScreenState extends State<CashBookScreen> {
                                               ),
                                             ),
                                             const SizedBox(height: 4),
-                                            Text(
-                                              'Category: ${transaction.category}',
-                                            ),
                                             Text(
                                               'Date: ${transaction.date.day}/${transaction.date.month}/${transaction.date.year}',
                                             ),

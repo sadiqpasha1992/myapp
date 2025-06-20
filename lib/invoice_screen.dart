@@ -74,7 +74,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
               pw.TableHelper.fromTextArray(
                 headers: ['Product', 'Quantity', 'Unit Price', 'Total'],
                 data: [
-                  [_selectedSale!.productName, _selectedSale!.quantity, '₹ ${_selectedSale!.unitPrice.toStringAsFixed(2)}', '₹ ${_selectedSale!.totalAmount.toStringAsFixed(2)}'],
+                  [AppData.productsBox.get(_selectedSale!.productId)?.name ?? 'Unknown Product', _selectedSale!.quantity, '₹ ${_selectedSale!.saleUnitPrice.toStringAsFixed(2)}', '₹ ${_selectedSale!.totalAmount.toStringAsFixed(2)}'],
                   // Add more items if your sale could contain multiple products
                 ],
                 headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
@@ -169,7 +169,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                     final customerName = AppData.partiesBox.get(sale.customerId)?.name ?? 'Unknown Customer';
                     return DropdownMenuItem<Sale>(
                       value: sale,
-                      child: Text('$customerName - ${sale.productName} (₹ ${sale.totalAmount.toStringAsFixed(2)}) on ${sale.saleDate.day}/${sale.saleDate.month}/${sale.saleDate.year}'),
+                      child: Text('$customerName - ${AppData.productsBox.get(sale.productId)?.name ?? 'Unknown Product'} (₹ ${sale.totalAmount.toStringAsFixed(2)}) on ${sale.saleDate.day}/${sale.saleDate.month}/${sale.saleDate.year}'),
                     );
                   }).toList(),
                   onChanged: (Sale? newValue) {
@@ -199,7 +199,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                       const Divider(),
                       // Retrieve customer name from Party using customerId
                       Text('Customer: ${AppData.partiesBox.get(_selectedSale!.customerId)?.name ?? 'Unknown Customer'}'),
-                      Text('Product: ${_selectedSale!.productName}'),
+                      Text('Product: ${AppData.productsBox.get(_selectedSale!.productId)?.name ?? 'Unknown Product'}'),
                       Text('Quantity: ${_selectedSale!.quantity}'),
                       Text('Amount: ₹ ${_selectedSale!.totalAmount.toStringAsFixed(2)}'),
                       Text('Date: ${_selectedSale!.saleDate.day}/${_selectedSale!.saleDate.month}/${_selectedSale!.saleDate.year}'),

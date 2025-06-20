@@ -214,10 +214,7 @@ class _SalesReportTab extends StatelessWidget {
                           itemBuilder: (context, index) {
                             final sale = filteredSales[index];
                             // Get customer name, default to 'N/A' if ID not found or null
-                            final customerName = sale.customerId != null
-                                ? partiesBox.get(sale.customerId)?.name ?? 'N/A'
-                                : 'N/A';
-
+                            final customerName = partiesBox.get(sale.customerId)?.name ?? 'N/A';
                             return Card(
                               margin: const EdgeInsets.symmetric(vertical: 8.0),
                               elevation: 2,
@@ -230,7 +227,7 @@ class _SalesReportTab extends StatelessWidget {
                                   color: Colors.green,
                                 ),
                                 title: Text(
-                                  '$customerName - ${sale.productName}', // Corrected to use customerName
+                                  '$customerName - ${AppData.productsBox.get(sale.productId)?.name ?? 'Unknown Product'}', // Fetch product name using productId
                                 ),
                                 subtitle: Text(
                                   'Qty: ${sale.quantity} | Date: ${DateFormat('dd/MMM/yyyy').format(sale.saleDate)}', // Corrected: use saleDate
@@ -357,10 +354,7 @@ class _PurchaseReportTab extends StatelessWidget {
                           itemBuilder: (context, index) {
                             final purchase = filteredPurchases[index];
                             // Get supplier name, default to 'N/A' if ID not found or null
-                            final supplierName = purchase.supplierId != null
-                                ? partiesBox.get(purchase.supplierId)?.name ?? 'N/A'
-                                : 'N/A';
-
+                            final supplierName = partiesBox.get(purchase.supplierId)?.name ?? 'N/A';
                             return Card(
                               margin: const EdgeInsets.symmetric(vertical: 8.0),
                               elevation: 2,
