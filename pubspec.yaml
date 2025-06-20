@@ -45,7 +45,7 @@ dependencies:
   intl: ^0.20.2
   web: ^0.5.1 # Add web dependency for Blob and Url
   js: ^0.7.2
-  uuid: ^4.4.0 # Add uuid dependency for generating unique IDs
+  uuid: ^4.5.1 # Add uuid dependency for generating unique IDs
   collection: ^1.18.0 # Add collection dependency for firstWhereOrNull
 dev_dependencies:
   flutter_test:
