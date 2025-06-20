@@ -1,12 +1,11 @@
+// lib/purchase_screen.dart (Corrected - Body Only + Data Logic Fixes)
 import 'package:flutter/material.dart';
-import 'package:hive_flutter/hive_flutter.dart'; // Import Hive for ValueListenableBuilder
-import 'package:myapp/data/app_data.dart'; // Import our shared data file
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:myapp/data/app_data.dart';
+import 'package:myapp/models/models.dart'; // Ensure models.dart is imported for Product and Purchase
 import 'package:myapp/purchase_detail_screen.dart'; // Import PurchaseDetailScreen
+import 'package:uuid/uuid.dart'; // For generating unique IDs
 
-// Purchase class is defined in app_data.dart
-
-// PurchaseScreen is now a StatefulWidget because its content (form fields and the list of purchases)
-// will change over time based on user interaction.
 class PurchaseScreen extends StatefulWidget {
   const PurchaseScreen({super.key});
 
@@ -14,46 +13,35 @@ class PurchaseScreen extends StatefulWidget {
   State<PurchaseScreen> createState() => _PurchaseScreenState();
 }
 
-// This is the "State" class that holds the changeable data for PurchaseScreen.
 class _PurchaseScreenState extends State<PurchaseScreen> {
-  // TextEditingControllers for purchase input fields
+  final _formKey = GlobalKey<FormState>(); // Added a Form key for validation
   final TextEditingController _supplierNameController = TextEditingController();
   final TextEditingController _productNameController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
-  final TextEditingController _purchaseAmountController =
-      TextEditingController();
+  final TextEditingController _unitPriceController =
+      TextEditingController(); // Changed from purchaseAmountController
 
-  // Dispose controllers to free up memory when the widget is removed
   @override
   void dispose() {
     _supplierNameController.dispose();
     _productNameController.dispose();
     _quantityController.dispose();
-    _purchaseAmountController.dispose();
+    _unitPriceController.dispose(); // Dispose the correct controller
     super.dispose();
   }
 
   // Method to save a new purchase
   void _savePurchase() async {
-    // Made async to await stock update
-    final String supplierName = _supplierNameController.text.trim();
-    final String productName = _productNameController.text.trim();
-    final String quantityStr = _quantityController.text.trim(); // Get as string
-    final String purchaseAmount = _purchaseAmountController.text.trim();
-
-    // Basic validation: Check if fields are not empty
-    if (supplierName.isEmpty ||
-        productName.isEmpty ||
-        quantityStr.isEmpty ||
-        purchaseAmount.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Please fill all fields!')));
-      return;
+    if (!_formKey.currentState!.validate()) {
+      return; // Form is not valid
     }
 
-    final double? purchasedQuantity = double.tryParse(quantityStr);
-    if (purchasedQuantity == null || purchasedQuantity <= 0) {
+    final String supplierName = _supplierNameController.text.trim();
+    final String productName = _productNameController.text.trim();
+    final double? quantity = double.tryParse(_quantityController.text.trim());
+    final double? unitPrice = double.tryParse(_unitPriceController.text.trim());
+
+    if (quantity == null || quantity <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please enter a valid positive quantity!'),
@@ -61,90 +49,96 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       );
       return;
     }
+    if (unitPrice == null || unitPrice <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid positive unit price!'),
+        ),
+      );
+      return;
+    }
 
     // --- Stock Management: Increment product quantity or add new product ---
-    final List<Product> productsInStock = AppData.productsBox.values.toList();
-    final int productIndex = productsInStock.indexWhere(
-      (p) => p.name.toLowerCase() == productName.toLowerCase(),
-    );
+    Product? existingProduct;
+    try {
+      existingProduct = AppData.productsBox.values.firstWhere(
+        (p) => p.name.toLowerCase() == productName.toLowerCase(),
+      );
+    } catch (e) {
+      // Product not found, existingProduct remains null
+    }
 
-    if (productIndex != -1) {
-      // Product found, update its quantity
-      final Product existingProduct = productsInStock[productIndex];
-      final updatedProduct = Product(
-        name: existingProduct.name,
-        quantity:
-            existingProduct.quantity + purchasedQuantity, // Increment quantity
-        unit: existingProduct.unit, // Keep existing unit
-        purchasePrice:
-            existingProduct.purchasePrice, // Keep existing purchase price
-        sellingPrice:
-            existingProduct.sellingPrice, // Keep existing selling price
-      );
-      // Update the product in Hive
-      await AppData.productsBox.putAt(productIndex, updatedProduct);
+    if (existingProduct != null) {
+      // Product found, update its currentStock and unitPrice
+      existingProduct.currentStock += quantity;
+      existingProduct.unitPrice = unitPrice; // Update unit price with latest purchase price
+      await existingProduct.save(); // Save changes to the existing HiveObject
     } else {
-      // Product not found, add it to stock with the purchased quantity
+      // Product not found, create a new one
       final newProduct = Product(
+        id: const Uuid().v4(), // Generate unique ID for the product
         name: productName,
-        quantity: purchasedQuantity,
-        unit: 'Pcs', // Default unit for new product
-        purchasePrice:
-            double.tryParse(purchaseAmount) ??
-            0.0, // Use purchase amount as initial purchase price
-        sellingPrice:
-            (double.tryParse(purchaseAmount) ?? 0.0) *
-            1.2, // Example: 20% markup for selling price
+        currentStock: quantity,
+        unitPrice: unitPrice,
+        unit: '', // Assuming a default empty string for unit
+        purchasePrice: unitPrice, // Using the unitPrice from the purchase as the initial purchasePrice for the product
+        // Assuming Product model has id, name, currentStock, unitPrice, unit, purchasePrice
       );
-      await AppData.productsBox.add(newProduct);
+      await AppData.productsBox.put(newProduct.id, newProduct); // Add new product to box
+      existingProduct = newProduct; // Use the new product for the purchase link
     }
     // --- End Stock Management ---
 
     // Create a new Purchase object
     final newPurchase = Purchase(
-      supplierName: supplierName,
+      id: const Uuid().v4(), // Generate unique ID for the purchase
+      productId: existingProduct.id, // Link to the product ID
       productName: productName,
-      quantity: purchasedQuantity, // Use the parsed double quantity
-      purchaseAmount: double.tryParse(purchaseAmount) ?? 0.0,
-      date: DateTime.now(), // Record the current date and time
+      quantity: quantity,
+      unitPrice: unitPrice,
+      totalAmount: quantity * unitPrice,
+      purchaseDate: DateTime.now(),
+      supplierId:
+          supplierName.isNotEmpty
+              ? supplierName
+              : null, // Optional: Link to Party ID
     );
 
-    // Add to the Hive Box using AppData
-    AppData.addPurchase(newPurchase)
-        .then((_) {
-          if (!mounted) return;
+    try {
+      await AppData.addPurchase(
+        newPurchase,
+      ); // Use await since addPurchase updates Hive
+      if (mounted) {
+        // Clear text fields after saving
+        _supplierNameController.clear();
+        _productNameController.clear();
+        _quantityController.clear();
+        _unitPriceController.clear();
 
-          // Clear text fields after saving
-          _supplierNameController.clear();
-          _productNameController.clear();
-          _quantityController.clear();
-          _purchaseAmountController.clear();
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Purchase saved successfully! Stock updated.'),
-            ),
-          );
-        })
-        .catchError((error) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to save purchase: $error')),
-          );
-        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Purchase saved successfully! Stock updated.'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to save purchase: $e')));
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('New Purchase'),
-        backgroundColor: Colors.orange, // Distinct color for Purchase
-        foregroundColor: Colors.white,
-      ),
-      body: SingleChildScrollView(
-        // Make the form and list scrollable
-        padding: const EdgeInsets.all(16.0),
+    // --- IMPORTANT: Scaffold and AppBar have been REMOVED! ---
+    return SingleChildScrollView(
+      // Make the form and list scrollable
+      padding: const EdgeInsets.all(16.0),
+      child: Form(
+        // Wrap with Form for validation
+        key: _formKey,
         child: Column(
           crossAxisAlignment:
               CrossAxisAlignment.start, // Align fields to the left
@@ -155,7 +149,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             ),
             const SizedBox(height: 24), // Space
             // Supplier Name Text Field
-            TextField(
+            TextFormField(
+              // Changed to TextFormField for validation
               controller: _supplierNameController,
               decoration: const InputDecoration(
                 labelText: 'Supplier Name',
@@ -166,10 +161,17 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 prefixIcon: Icon(Icons.local_shipping),
               ),
               keyboardType: TextInputType.text,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter supplier name';
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 16), // Space between fields
-            // Product Name Text Field
-            TextField(
+            // Product Name Text Field (You might want to make this a Product picker later)
+            TextFormField(
+              // Changed to TextFormField for validation
               controller: _productNameController,
               decoration: const InputDecoration(
                 labelText: 'Product Name',
@@ -180,11 +182,18 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 prefixIcon: Icon(Icons.inventory),
               ),
               keyboardType: TextInputType.text,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter product name';
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 16),
 
             // Quantity Text Field
-            TextField(
+            TextFormField(
+              // Changed to TextFormField for validation
               controller: _quantityController,
               decoration: const InputDecoration(
                 labelText: 'Quantity',
@@ -194,68 +203,79 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 ),
                 prefixIcon: Icon(Icons.numbers),
               ),
-              keyboardType: TextInputType.number, // Suggests a numeric keyboard
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter quantity';
+                }
+                if (double.tryParse(value) == null ||
+                    double.tryParse(value)! <= 0) {
+                  return 'Please enter a valid positive number';
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 16),
 
-            // Purchase Amount Text Field
-            TextField(
-              controller: _purchaseAmountController,
+            // Unit Price Text Field (was Purchase Amount)
+            TextFormField(
+              // Changed to TextFormField for validation
+              controller: _unitPriceController,
               decoration: const InputDecoration(
-                labelText: 'Purchase Amount',
-                hintText: 'e.g., 5000.00',
+                labelText: 'Unit Price (Per Item)', // Clarified label
+                hintText: 'e.g., 100.00',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.all(Radius.circular(8.0)),
                 ),
-                prefixIcon: Icon(
-                  Icons.currency_rupee,
-                ), // Or Icons.attach_money for dollar
+                prefixIcon: Icon(Icons.currency_rupee),
               ),
-              keyboardType: TextInputType.number, // Suggests a numeric keyboard
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter unit price';
+                }
+                if (double.tryParse(value) == null ||
+                    double.tryParse(value)! <= 0) {
+                  return 'Please enter a valid positive number';
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 24), // Space before button
             // Save Purchase Button
             SizedBox(
-              // Use SizedBox to give the button a specific width
-              width: double.infinity, // Makes the button take full width
+              width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: _savePurchase, // Call our save function when pressed
+                onPressed: _savePurchase,
                 icon: const Icon(Icons.save),
                 label: const Text('Save Purchase'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange, // Button background color
-                  foregroundColor: Colors.white, // Button text/icon color
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 16,
-                  ), // Vertical padding
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(
-                      8,
-                    ), // Rounded corners for button
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  textStyle: const TextStyle(fontSize: 18), // Text size
+                  textStyle: const TextStyle(fontSize: 18),
                 ),
               ),
             ),
 
             const SizedBox(height: 32), // Space before the list of purchases
             // --- Section: Displaying Saved Purchases ---
-            // Use ValueListenableBuilder to automatically rebuild when Hive box changes
-            ValueListenableBuilder(
-              valueListenable:
-                  AppData.purchasesBox
-                      .listenable(), // Listen for changes in the 'purchases' box
+            ValueListenableBuilder<Box<Purchase>>(
+              valueListenable: AppData.purchasesBox.listenable(),
               builder: (context, Box<Purchase> box, _) {
-                // Get the current list of purchases from the box
                 final List<Purchase> purchases = box.values.toList();
-                // Sort by date (most recent first)
-                purchases.sort((a, b) => b.date.compareTo(a.date));
+                purchases.sort(
+                  (a, b) => b.purchaseDate.compareTo(a.purchaseDate),
+                ); // Corrected date field name
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Saved Purchases (${purchases.length})', // Shows count of purchases from Hive
+                      'Saved Purchases (${purchases.length})',
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -276,74 +296,59 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                             ),
                           ),
                         )
-                        : Container(
-                          constraints: BoxConstraints(
-                            maxHeight:
-                                MediaQuery.of(context).size.height *
-                                0.5, // Max height of the list
-                          ),
-                          child: ListView.builder(
-                            shrinkWrap:
-                                true, // Makes ListView take only necessary space
-                            physics:
-                                const ClampingScrollPhysics(), // Allows inner scrolling without issues
-                            itemCount:
-                                purchases.length, // Use the list from Hive
-                            itemBuilder: (context, index) {
-                              // For each item in purchases, build a Card
-                              final purchase =
-                                  purchases[index]; // Use the purchase from Hive
-                              // Get the actual Hive key/index for this item
-                              final int hiveIndex = AppData.purchasesBox.keyAt(
-                                index,
-                              );
-
-                              return Card(
-                                margin: const EdgeInsets.symmetric(
-                                  vertical: 8.0,
-                                ),
-                                elevation: 2,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: ListTile(
-                                  // Changed from Padding/Row to ListTile for tap
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder:
-                                            (context) => PurchaseDetailScreen(
-                                              purchase: purchase,
-                                              purchaseIndex:
-                                                  hiveIndex, // NEW: Pass the Hive index
-                                            ),
-                                      ),
-                                    );
-                                  },
-                                  leading: const Icon(
-                                    Icons.receipt_long,
-                                    color: Colors.orange,
-                                  ),
-                                  title: Text(
-                                    '${purchase.supplierName} - ${purchase.productName}',
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
+                        : ListView.builder(
+                          shrinkWrap: true,
+                          physics: const ClampingScrollPhysics(),
+                          itemCount: purchases.length,
+                          itemBuilder: (context, index) {
+                            final purchase = purchases[index];
+                            // For Hive objects, the key is what we used when putting it, or the object's index if added without a key.
+                            // If using purchase.id as key, you can retrieve it with purchase.key.
+                            // If you want the list index, it's just 'index'.
+                            // For `PurchaseDetailScreen`, if it uses a Hive index, you might need to find the key or use a different approach.
+                            // For simplicity, let's pass the purchase object directly.
+                            return Card(
+                              margin: const EdgeInsets.symmetric(vertical: 8.0),
+                              elevation: 2,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: ListTile(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder:
+                                          (context) => PurchaseDetailScreen(
+                                            purchase: purchase,
+                                            purchaseIndex:
+                                                index, // Pass list index, PurchaseDetailScreen should handle this
+                                          ),
                                     ),
-                                  ),
-                                  subtitle: Text(
-                                    'Qty: ${purchase.quantity} | Amount: ₹ ${purchase.purchaseAmount} | Date: ${purchase.date.day}/${purchase.date.month}/${purchase.date.year}',
-                                  ),
-                                  trailing: const Icon(
-                                    Icons.arrow_forward_ios,
-                                    size: 16,
-                                    color: Colors.grey,
+                                  );
+                                },
+                                leading: const Icon(
+                                  Icons.receipt_long,
+                                  color: Colors.orange,
+                                ),
+                                title: Text(
+                                  '${purchase.supplierId ?? 'Unknown Supplier'} - ${purchase.productName}', // Use supplierId now
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                              );
-                            },
-                          ),
+                                subtitle: Text(
+                                  'Qty: ${purchase.quantity} | Amount: ₹ ${purchase.totalAmount.toStringAsFixed(2)} | Date: ${purchase.purchaseDate.day}/${purchase.purchaseDate.month}/${purchase.purchaseDate.year}', // Use totalAmount and purchaseDate
+                                ),
+                                trailing: const Icon(
+                                  Icons.arrow_forward_ios,
+                                  size: 16,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            );
+                          },
                         ),
                   ],
                 );

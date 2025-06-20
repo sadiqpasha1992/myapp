@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart'; // Import Hive for ValueListenableBuilder
 import 'package:myapp/data/app_data.dart'; // Import our shared data file
+import 'package:myapp/models/models.dart'; // Import Expense class
 
-// Expense class is defined in app_data.dart
+// ExpenseScreen is now a StatefulWidget because its content (form fields and the list of expenses)
+// will change over time based on user interaction.
 
 // ExpenseScreen is now a StatefulWidget because its content (form fields and the list of expenses)
 // will change over time based on user interaction.

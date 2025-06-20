@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
+
 import 'package:myapp/data/app_data.dart'; // Import your Purchase model
+import 'package:myapp/models/models.dart'; // Import Purchase and Product models
+import 'package:uuid/uuid.dart'; // For generating unique IDs
+import 'package:collection/collection.dart'; // For firstWhereOrNull
+// Import Hive for Box type
 
 
 class EditPurchaseScreen extends StatefulWidget {
-  final Purchase purchase;
-  final int purchaseIndex;
+  final Purchase? purchase;
+  final int? purchaseIndex;
 
   const EditPurchaseScreen({
     super.key,
-    required this.purchase,
-    required this.purchaseIndex,
+    this.purchase,
+    this.purchaseIndex,
   });
 
   @override
@@ -27,11 +32,11 @@ class EditPurchaseScreenState extends State<EditPurchaseScreen> {
   @override
   void initState() {
     super.initState();
-    _supplierNameController = TextEditingController(text: widget.purchase.supplierName);
-    _productNameController = TextEditingController(text: widget.purchase.productName);
-    _quantityController = TextEditingController(text: widget.purchase.quantity.toString());
-    _purchaseAmountController = TextEditingController(text: widget.purchase.purchaseAmount.toString());
-    _selectedDate = widget.purchase.date;
+    _supplierNameController = TextEditingController(text: widget.purchase?.supplierId ?? ''); // Use supplierId
+    _productNameController = TextEditingController(text: widget.purchase?.productName ?? '');
+    _quantityController = TextEditingController(text: widget.purchase?.quantity.toString() ?? '');
+    _purchaseAmountController = TextEditingController(text: widget.purchase?.totalAmount.toString() ?? ''); // Use totalAmount
+    _selectedDate = widget.purchase?.purchaseDate ?? DateTime.now(); // Use purchaseDate
   }
 
   @override
@@ -61,52 +66,101 @@ class EditPurchaseScreenState extends State<EditPurchaseScreen> {
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
 
-      // Get old purchase details to revert stock changes
-      final oldPurchase = AppData.purchasesBox.getAt(widget.purchaseIndex) as Purchase;
-
-      // Revert stock changes from the old purchase
-      await _updateStock(oldPurchase.productName, -oldPurchase.quantity);
-
-      // Create the updated purchase object
-      final updatedPurchase = Purchase(
-        supplierName: _supplierNameController.text,
-        productName: _productNameController.text,
-        quantity: double.parse(_quantityController.text),
-        purchaseAmount: double.parse(_purchaseAmountController.text),
-        date: _selectedDate,
+      // Find the product to get its ID
+      final Product? product = AppData.productsBox.values.firstWhereOrNull(
+        (p) => p.name.toLowerCase() == _productNameController.text.trim().toLowerCase(),
       );
 
-      // Update stock changes for the new purchase
-      await _updateStock(updatedPurchase.productName, updatedPurchase.quantity);
+      if (product == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Product "${_productNameController.text.trim()}" not found in stock. Cannot save purchase.',
+              ),
+            ),
+          );
+        }
+        return; // Stop if product is not found
+      }
 
-      // Save the updated purchase to Hive
-      await AppData.purchasesBox.putAt(widget.purchaseIndex, updatedPurchase);
+      final newPurchase = Purchase(
+        // Assuming Purchase model requires ID, generate one if adding
+        id: widget.purchase?.id ?? const Uuid().v4(),
+        productId: product.id, // Use the found product's ID
+        supplierId: _supplierNameController.text, // Use supplierId
+        productName: _productNameController.text,
+        quantity: double.parse(_quantityController.text),
+        unitPrice: double.parse(_purchaseAmountController.text), // Assuming purchaseAmount maps to unitPrice in Purchase model
+        totalAmount: double.parse(_quantityController.text) * double.parse(_purchaseAmountController.text), // Calculate totalAmount
+        purchaseDate: _selectedDate, // Use purchaseDate
+        // customerId is not part of Purchase model
+      );
+
+      if (widget.purchaseIndex != null) {
+        // Editing existing purchase
+        // Get old purchase details to revert stock changes
+        final oldPurchase = AppData.purchasesBox.getAt(widget.purchaseIndex!); // Handle potential null
+
+        if (oldPurchase != null) {
+           // Revert stock changes from the old purchase
+          await _updateStock(oldPurchase.productName, -oldPurchase.quantity);
+        }
+
+
+        // Update stock changes for the new purchase
+        await _updateStock(newPurchase.productName, newPurchase.quantity);
+
+        // Save the updated purchase to Hive
+        // Assuming AppData.updatePurchase exists and takes Purchase object
+        // If not, need to use AppData.purchasesBox.put(newPurchase.id, newPurchase)
+        // Based on app_data.dart, updatePurchase exists and takes Purchase object
+        await AppData.updatePurchase(newPurchase);
+
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Purchase updated successfully!')),
+          );
+        }
+      } else {
+        // Adding new purchase
+        // Assuming AppData.addPurchase exists and takes Purchase object
+        // Based on app_data.dart, addPurchase exists and takes Purchase object
+        await AppData.addPurchase(newPurchase);
+        await _updateStock(newPurchase.productName, newPurchase.quantity);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Purchase added successfully!')),
+          );
+        }
+      }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Purchase updated successfully!')),
-        );
-        Navigator.of(context).pop(); // Go back to detail screen
+        Navigator.of(context).pop(); // Go back
       }
     }
   }
 
   Future<void> _updateStock(String productName, double quantityChange) async {
-    final List<Product> productsInStock = AppData.productsBox.values.toList();
-    final int productIndex = productsInStock.indexWhere(
+    final Product? existingProduct = AppData.productsBox.values.firstWhereOrNull(
       (p) => p.name.toLowerCase() == productName.toLowerCase(),
     );
 
-    if (productIndex != -1) {
-      final Product existingProduct = productsInStock[productIndex];
+
+    if (existingProduct != null) {
+      // Create updated Product object using existing fields and new stock
       final updatedProduct = Product(
+        id: existingProduct.id, // Use existing ID
         name: existingProduct.name,
-        quantity: existingProduct.quantity + quantityChange, // Add or subtract quantity
+        currentStock: existingProduct.currentStock + quantityChange, // Add or subtract quantity
         unit: existingProduct.unit,
         purchasePrice: existingProduct.purchasePrice,
-        sellingPrice: existingProduct.sellingPrice,
+        unitPrice: existingProduct.unitPrice, // Use unitPrice for selling price
       );
-      await AppData.productsBox.putAt(productIndex, updatedProduct);
+      // Update the product in Hive using its ID
+      await AppData.productsBox.put(updatedProduct.id, updatedProduct);
     } else {
        if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -124,7 +178,7 @@ class EditPurchaseScreenState extends State<EditPurchaseScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Edit Purchase'),
+        title: Text(widget.purchaseIndex != null ? 'Edit Purchase' : 'Add New Purchase'),
         backgroundColor: Colors.orange,
         foregroundColor: Colors.white,
       ),
@@ -170,11 +224,11 @@ class EditPurchaseScreenState extends State<EditPurchaseScreen> {
               ),
               TextFormField(
                 controller: _purchaseAmountController,
-                decoration: const InputDecoration(labelText: 'Purchase Amount'),
+                decoration: const InputDecoration(labelText: 'Unit Price'), // Changed label
                 keyboardType: TextInputType.number,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
-                    return 'Please enter purchase amount';
+                    return 'Please enter unit price';
                   }
                    if (double.tryParse(value) == null) {
                     return 'Please enter a valid number';
@@ -197,7 +251,7 @@ class EditPurchaseScreenState extends State<EditPurchaseScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 15),
                   textStyle: const TextStyle(fontSize: 18),
                 ),
-                child: const Text('Save Changes'),
+                child: Text(widget.purchaseIndex != null ? 'Save Changes' : 'Add Purchase'),
               ),
             ],
           ),

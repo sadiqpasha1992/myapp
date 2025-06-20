@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:myapp/data/app_data.dart'; // Import your Sale model
+// Import Hive
+import 'package:myapp/data/app_data.dart'; // Import AppData
+import 'package:myapp/models/models.dart'; // Import Sale, Product, Party models
+import 'package:collection/collection.dart'; // For firstWhereOrNull
+
 
 class SaleDetailScreen extends StatefulWidget {
   final Sale sale; // The Sale object to display
@@ -30,15 +34,17 @@ class _SaleDetailScreenState extends State<SaleDetailScreen> {
   void initState() {
     super.initState();
     // Initialize controllers with current sale data
+    // Retrieve customer name from Party using customerId
+    final customer = AppData.partiesBox.get(widget.sale.customerId);
     _customerNameController = TextEditingController(
-      text: widget.sale.customerName,
+      text: customer?.name ?? 'Unknown Customer',
     );
     _productNameController = TextEditingController(
       text: widget.sale.productName,
     );
     _quantityController = TextEditingController(text: widget.sale.quantity.toString());
-    _saleAmountController = TextEditingController(text: widget.sale.saleAmount.toString());
-    _selectedDate = widget.sale.date;
+    _saleAmountController = TextEditingController(text: widget.sale.totalAmount.toString()); // Use totalAmount
+    _selectedDate = widget.sale.saleDate; // Use saleDate
   }
 
   @override
@@ -136,7 +142,7 @@ class _SaleDetailScreenState extends State<SaleDetailScreen> {
           ),
           title: const Text('Confirm Deletion'),
           content: Text(
-            'Are you sure you want to delete the sale to "${widget.sale.customerName}" for "${widget.sale.productName}"? This action cannot be undone and will affect stock levels.',
+            'Are you sure you want to delete the sale to "${_customerNameController.text}" for "${widget.sale.productName}"? This action cannot be undone and will affect stock levels.',
           ),
           actions: <Widget>[
             TextButton(
@@ -162,13 +168,14 @@ class _SaleDetailScreenState extends State<SaleDetailScreen> {
                   final Product existingProduct = productsInStock[productIndex];
                   final double soldQuantity = widget.sale.quantity; // quantity is already double
                   final updatedProduct = Product(
+                    id: existingProduct.id,
                     name: existingProduct.name,
-                    quantity:
-                        existingProduct.quantity +
+                    currentStock:
+                        existingProduct.currentStock +
                         soldQuantity, // Revert: Add quantity back
                     unit: existingProduct.unit,
                     purchasePrice: existingProduct.purchasePrice,
-                    sellingPrice: existingProduct.sellingPrice,
+                    unitPrice: existingProduct.unitPrice, // Use unitPrice
                   );
                   await AppData.productsBox.putAt(productIndex, updatedProduct);
                   if (context.mounted) {
@@ -269,11 +276,12 @@ class _SaleDetailScreenState extends State<SaleDetailScreen> {
               ? oldQuantity // Revert full old quantity if product name changed
               : -quantityDifference; // Revert only the decrease if product name is same
       final updatedOldProduct = Product(
+        id: oldProduct.id,
         name: oldProduct.name,
-        quantity: oldProduct.quantity + quantityToRevert,
+        currentStock: oldProduct.currentStock + quantityToRevert,
         unit: oldProduct.unit,
         purchasePrice: oldProduct.purchasePrice,
-        sellingPrice: oldProduct.sellingPrice,
+        unitPrice: oldProduct.unitPrice, // Use unitPrice
       );
       await AppData.productsBox.putAt(oldProductIndex, updatedOldProduct);
     }
@@ -285,22 +293,24 @@ class _SaleDetailScreenState extends State<SaleDetailScreen> {
       if (widget.sale.productName.toLowerCase() ==
           newProductName.toLowerCase()) {
         final updatedNewProduct = Product(
+          id: newProduct.id,
           name: newProduct.name,
-          quantity:
-              newProduct.quantity - quantityDifference, // Apply the net change
+          currentStock:
+              newProduct.currentStock - quantityDifference, // Apply the net change
           unit: newProduct.unit,
           purchasePrice: newProduct.purchasePrice,
-          sellingPrice: newProduct.sellingPrice,
+          unitPrice: newProduct.unitPrice, // Use unitPrice
         );
         await AppData.productsBox.putAt(newProductIndex, updatedNewProduct);
       } else {
         // New product name, decrement stock for this product
         final updatedNewProduct = Product(
+          id: newProduct.id,
           name: newProduct.name,
-          quantity: newProduct.quantity - newQuantity,
+          currentStock: newProduct.currentStock - newQuantity,
           unit: newProduct.unit,
           purchasePrice: newProduct.purchasePrice,
-          sellingPrice: newProduct.sellingPrice,
+          unitPrice: newProduct.unitPrice, // Use unitPrice
         );
         await AppData.productsBox.putAt(newProductIndex, updatedNewProduct);
       }
@@ -320,13 +330,44 @@ class _SaleDetailScreenState extends State<SaleDetailScreen> {
     }
     // --- End Stock Management for Edit ---
 
+    // Find the new product to get its ID if the product name changed
+    String updatedProductId = widget.sale.productId;
+    // Re-fetch or use the list from above if still valid
+    if (widget.sale.productName.toLowerCase() != newProductName.toLowerCase()) {
+       final newProduct = productsInStock.firstWhereOrNull(
+           (p) => p.name.toLowerCase() == newProductName.toLowerCase());
+       if (newProduct != null) {
+           updatedProductId = newProduct.id;
+       } else {
+           // This case should ideally be caught by the product not found check earlier,
+           // but adding a safeguard here.
+           if (mounted) {
+               ScaffoldMessenger.of(context).showSnackBar(
+                   SnackBar(
+                       content: Text(
+                           'Error finding new product ID for "$newProductName".',
+                       ),
+                   ),
+               );
+           }
+           return; // Stop update
+       }
+    }
+
+    final double parsedTotalAmount = double.tryParse(newSaleAmountStr) ?? 0.0;
+    final double calculatedUnitPrice = newQuantity > 0 ? parsedTotalAmount / newQuantity : 0.0;
+
+
     // Create an updated Sale object
     final updatedSale = Sale(
-      customerName: newCustomerName,
+      id: widget.sale.id, // Use existing ID
+      productId: updatedProductId, // Use updated product ID
       productName: newProductName,
       quantity: newQuantity, // Use parsed double
-      saleAmount: double.tryParse(newSaleAmountStr) ?? 0.0, // Parse saleAmount to double
-      date: _selectedDate,
+      unitPrice: calculatedUnitPrice, // Calculate unit price
+      totalAmount: parsedTotalAmount, // Use parsed total amount
+      saleDate: _selectedDate, // Use selected date
+      customerId: widget.sale.customerId, // Use existing customer ID
     );
 
     // Update the sale in Hive at its original index
@@ -450,7 +491,7 @@ class _SaleDetailScreenState extends State<SaleDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Sale to: ${widget.sale.customerName}',
+                        'Sale to: ${_customerNameController.text}',
                         style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
@@ -470,12 +511,12 @@ class _SaleDetailScreenState extends State<SaleDetailScreen> {
                       ),
                       _buildDetailRow(
                         'Sale Amount:',
-                        '₹ ${widget.sale.saleAmount.toStringAsFixed(2)}', // Format double to String for display
+                        '₹ ${widget.sale.totalAmount.toStringAsFixed(2)}', // Format double to String for display
                         Icons.currency_rupee,
                       ),
                       _buildDetailRow(
                         'Date:',
-                        '${widget.sale.date.day}/${widget.sale.date.month}/${widget.sale.date.year}',
+                        '${widget.sale.saleDate.day}/${widget.sale.saleDate.month}/${widget.sale.saleDate.year}',
                         Icons.calendar_today,
                       ),
                       const SizedBox(height: 30),

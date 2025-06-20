@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:myapp/data/app_data.dart'; // Import AppData for product model and box operations
+import 'package:myapp/models/models.dart'; // Import Product class
+import 'package:uuid/uuid.dart'; // Import Uuid for generating IDs
 
 class ProductDetailScreen extends StatefulWidget {
-  final Product product;
-  final int productIndex; // Index in Hive box for updating/deleting
+  final Product? product;
+  // Using product ID instead of index for consistency with AppData methods
+  final String? productId;
 
   const ProductDetailScreen({
     super.key,
-    required this.product,
-    required this.productIndex,
+    this.product,
+    this.productId,
   });
 
   @override
@@ -27,17 +30,22 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.product.name);
+    // Retrieve product by ID if productId is provided
+    final initialProduct = widget.productId != null ? AppData.productsBox.get(widget.productId!) : null;
+
+    _nameController = TextEditingController(text: initialProduct?.name ?? '');
     _quantityController = TextEditingController(
-      text: widget.product.quantity.toString(),
+      text: initialProduct?.currentStock.toString() ?? '', // Use currentStock
     );
-    _unitController = TextEditingController(text: widget.product.unit);
+    _unitController = TextEditingController(text: initialProduct?.unit ?? '');
     _purchasePriceController = TextEditingController(
-      text: widget.product.purchasePrice.toStringAsFixed(2),
+      text: initialProduct?.purchasePrice.toStringAsFixed(2) ?? '',
     );
     _sellingPriceController = TextEditingController(
-      text: widget.product.sellingPrice.toStringAsFixed(2),
+      text: initialProduct?.unitPrice.toStringAsFixed(2) ?? '', // Use unitPrice
     );
+    // If product is null, we are adding a new product, so start in editing mode
+    _isEditing = initialProduct == null;
   }
 
   @override
@@ -112,6 +120,16 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   // Method to handle product deletion
   void _deleteProduct(BuildContext context) {
+    if (widget.productId == null) {
+      // Cannot delete a product that hasn't been saved yet
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot delete unsaved product.'),
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -121,7 +139,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           ),
           title: const Text('Confirm Deletion'),
           content: Text(
-            'Are you sure you want to delete product "${widget.product.name}"? This action cannot be undone and will affect related transactions (though transactions themselves won\'t be deleted).',
+            'Are you sure you want to delete product "${widget.product!.name}"? This action cannot be undone and will affect related transactions (though transactions themselves won\'t be deleted).',
           ),
           actions: <Widget>[
             TextButton(
@@ -135,17 +153,16 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 Navigator.of(dialogContext).pop();
                 final messenger = ScaffoldMessenger.of(context);
                 final navigator = Navigator.of(context);
-                await AppData.deleteProduct(
-                  widget.productIndex,
-                ); // Delete by index
+                // Delete by ID instead of index
+                await AppData.deleteProduct(widget.product!.id);
                 if (mounted) {
                   messenger.showSnackBar(
                     const SnackBar(
                       content: Text('Product deleted successfully!'),
                     ),
                   );
-                  navigator.pop(); // Go back to Stock Summary screen
                 }
+                navigator.pop(); // Go back to Stock Summary screen
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
@@ -201,74 +218,87 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       return;
     }
 
-    // Handle potential product name change and check for duplicates (excluding current product)
-    if (newName.toLowerCase() != widget.product.name.toLowerCase()) {
-      final existingProducts = AppData.productsBox.values.toList();
-      if (existingProducts.any(
-        (p) => p.name.toLowerCase() == newName.toLowerCase(),
-      )) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Product with this new name already exists! Choose a unique name.',
-            ),
+    // Handle potential product name change and check for duplicates (excluding current product if editing)
+    final existingProducts = AppData.productsBox.values.toList();
+    if (existingProducts.any(
+      (p) =>
+          p.name.toLowerCase() == newName.toLowerCase() &&
+          (widget.productId == null || // If adding new, check all
+              p.id != widget.productId), // If editing, exclude current product by ID
+    )) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Product with this name already exists! Choose a unique name.',
           ),
-        );
-        return;
-      }
+        ),
+      );
+      return;
     }
 
-    // Create updated Product object
-    final updatedProduct = Product(
+    // Create Product object
+    final productToSave = Product(
+      // Generate new ID if adding, use existing if editing
+      id: widget.productId ?? const Uuid().v4(),
       name: newName,
-      quantity: newQuantity,
-      unit: newUnit,
-      purchasePrice: newPurchasePrice,
-      sellingPrice: newSellingPrice,
+      currentStock: double.tryParse(_quantityController.text) ?? 0.0, // Use currentStock
+      unitPrice: double.tryParse(_sellingPriceController.text) ?? 0.0, // Use unitPrice
+      unit: newUnit, // Use unit
+      purchasePrice: double.tryParse(newPurchasePriceStr) ?? 0.0, // Use purchasePrice
     );
 
-    // Update the product in Hive at its original index
-    await AppData.productsBox.putAt(widget.productIndex, updatedProduct);
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Product updated successfully!')),
-      );
-      setState(() {
-        _isEditing = false; // Switch back to view mode
-        // Update controllers with saved data to reflect changes immediately
-        _nameController.text = newName;
-        _quantityController.text = newQuantity.toStringAsFixed(2);
-        _unitController.text = newUnit;
-        _purchasePriceController.text = newPurchasePrice.toStringAsFixed(2);
-        _sellingPriceController.text = newSellingPrice.toStringAsFixed(2);
-      });
+    if (widget.productId != null) {
+      // Update the product in Hive using its ID
+      await AppData.productsBox.put(widget.productId!, productToSave);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Product updated successfully!')),
+        );
+        setState(() {
+          _isEditing = false; // Switch back to view mode
+          // Update controllers with saved data to reflect changes immediately
+          _nameController.text = newName;
+          _quantityController.text = newQuantity.toStringAsFixed(2);
+          _unitController.text = newUnit;
+          _purchasePriceController.text = newPurchasePrice.toStringAsFixed(2);
+          _sellingPriceController.text = newSellingPrice.toStringAsFixed(2);
+        });
+      }
+    } else {
+      // Add new product
+      await AppData.addProduct(productToSave);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Product added successfully!')),
+        );
+        Navigator.of(context).pop(); // Go back after adding
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Determine the product details to display based on whether we are editing
+    // Determine the product details to display based on whether we are editing or adding
+    // Need to retrieve the product by ID if viewing an existing one
     final displayProduct =
         _isEditing
             ? Product(
+              id: widget.productId ?? const Uuid().v4(), // Placeholder ID if adding
               name: _nameController.text,
-              quantity: double.tryParse(_quantityController.text) ?? 0.0,
+              currentStock: double.tryParse(_quantityController.text) ?? 0.0,
+              unitPrice: double.tryParse(_sellingPriceController.text) ?? 0.0,
               unit: _unitController.text,
-              purchasePrice:
-                  double.tryParse(_purchasePriceController.text) ?? 0.0,
-              sellingPrice:
-                  double.tryParse(_sellingPriceController.text) ?? 0.0,
+              purchasePrice: double.tryParse(_purchasePriceController.text) ?? 0.0,
             )
-            : widget.product;
+            : (widget.productId != null ? AppData.productsBox.get(widget.productId!) : null); // Retrieve by ID if viewing existing
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEditing ? 'Edit Product' : 'Product Details'),
+        title: Text(widget.productId != null ? (_isEditing ? 'Edit Product' : 'Product Details') : 'Add New Product'),
         backgroundColor: Colors.teal, // Consistent with Stock Summary color
         foregroundColor: Colors.white,
         actions: [
-          if (!_isEditing) // Show edit button when not editing
+          if (widget.productId != null && !_isEditing) // Show edit button only for existing products when not editing
             IconButton(
               icon: const Icon(Icons.edit),
               onPressed: () {
@@ -278,11 +308,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               },
               tooltip: 'Edit Product',
             ),
-          IconButton(
-            icon: const Icon(Icons.delete),
-            onPressed: () => _deleteProduct(context), // Call delete method
-            tooltip: 'Delete Product',
-          ),
+          if (widget.productId != null) // Show delete button only for existing products
+            IconButton(
+              icon: const Icon(Icons.delete),
+              onPressed: () => _deleteProduct(context), // Call delete method
+              tooltip: 'Delete Product',
+            ),
         ],
       ),
       body: SingleChildScrollView(
@@ -309,25 +340,25 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       ),
                       _buildEditableField(
                         _quantityController,
-                        'Current Stock',
+                        'Current Stock', // Label based on model field
                         Icons.numbers,
                         TextInputType.number,
                       ),
                       _buildEditableField(
                         _unitController,
-                        'Unit',
+                        'Unit', // This field is not in the Product model
                         Icons.square_foot,
                         TextInputType.text,
                       ),
                       _buildEditableField(
                         _purchasePriceController,
-                        'Purchase Price',
+                        'Purchase Price', // This field is not in the Product model
                         Icons.currency_rupee,
                         TextInputType.number,
                       ),
                       _buildEditableField(
                         _sellingPriceController,
-                        'Selling Price',
+                        'Selling Price', // Label based on model field (unitPrice)
                         Icons.sell,
                         TextInputType.number,
                       ),
@@ -336,7 +367,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         child: ElevatedButton.icon(
                           onPressed: _saveEditedProduct, // Call save method
                           icon: const Icon(Icons.save),
-                          label: const Text('Save Changes'),
+                          label: Text(widget.productId != null ? 'Save Changes' : 'Add Product'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.teal,
                             foregroundColor: Colors.white,
@@ -353,60 +384,62 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       ),
                     ],
                   )
-                else // Show static details in view mode
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Product: ${displayProduct.name}',
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.teal,
-                        ),
-                      ),
-                      const Divider(height: 30, thickness: 1.5),
-                      _buildDetailRow(
-                        'Current Stock:',
-                        '${displayProduct.quantity} ${displayProduct.unit}',
-                        Icons.storage,
-                      ),
-                      _buildDetailRow(
-                        'Purchase Price:',
-                        '₹ ${displayProduct.purchasePrice.toStringAsFixed(2)}',
-                        Icons.arrow_downward,
-                      ),
-                      _buildDetailRow(
-                        'Selling Price:',
-                        '₹ ${displayProduct.sellingPrice.toStringAsFixed(2)}',
-                        Icons.arrow_upward,
-                      ),
-                      const SizedBox(height: 30),
-                      Center(
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            setState(() {
-                              _isEditing = true;
-                            });
-                          },
-                          icon: const Icon(Icons.edit),
-                          label: const Text('Edit Product'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.teal.shade400,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 12,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            textStyle: const TextStyle(fontSize: 18),
+                else // Show static details in view mode (only for existing products)
+                  if (displayProduct != null) // Ensure displayProduct is not null before showing details
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Product: ${displayProduct.name}',
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.teal,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+                        const Divider(height: 30, thickness: 1.5),
+                        _buildDetailRow(
+                          'Current Stock:',
+                          // Assuming unit is stored elsewhere or needs to be added to model
+                          '${displayProduct.currentStock} ${displayProduct.unit}', // Use unit
+                          Icons.storage,
+                        ),
+                        _buildDetailRow(
+                          'Purchase Price:',
+                          '₹ ${displayProduct.purchasePrice.toStringAsFixed(2)}', // Use purchasePrice
+                          Icons.arrow_downward,
+                        ),
+                        _buildDetailRow(
+                          'Selling Price:',
+                          '₹ ${displayProduct.unitPrice.toStringAsFixed(2)}', // Using unitPrice for selling price
+                          Icons.arrow_upward,
+                        ),
+                        const SizedBox(height: 30),
+                        Center(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _isEditing = true;
+                              });
+                            },
+                            icon: const Icon(Icons.edit),
+                            label: const Text('Edit Product'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.teal.shade400,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 12,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              textStyle: const TextStyle(fontSize: 18),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
               ],
             ),
           ),

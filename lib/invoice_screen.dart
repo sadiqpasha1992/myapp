@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:myapp/data/app_data.dart'; // Import AppData for sales data
 import 'package:hive_flutter/hive_flutter.dart'; // Import for ValueListenableBuilder
+import 'package:myapp/models/models.dart'; // Import Sale class
 import 'package:pdf/pdf.dart'; // Import for PDF color definitions
 import 'package:pdf/widgets.dart' as pw; // Import 'pdf/widgets.dart' with alias 'pw'
 import 'invoice_web.dart' if (dart.library.io) 'invoice_nonweb.dart'; // Platform-specific import
@@ -54,8 +55,8 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text('Invoice Date: ${_selectedSale!.date.day}/${_selectedSale!.date.month}/${_selectedSale!.date.year}'),
-                      pw.Text('Invoice No: #${_selectedSale!.date.millisecondsSinceEpoch.toString().substring(5, 10)}'), // Simple invoice number
+                      pw.Text('Invoice Date: ${_selectedSale!.saleDate.day}/${_selectedSale!.saleDate.month}/${_selectedSale!.saleDate.year}'),
+                      pw.Text('Invoice No: #${_selectedSale!.saleDate.millisecondsSinceEpoch.toString().substring(5, 10)}'), // Simple invoice number
                     ],
                   ),
                 ],
@@ -64,7 +65,8 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
 
               // Bill To Section
               pw.Text('BILL TO:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-              pw.Text(_selectedSale!.customerName),
+              // Retrieve customer name from Party using customerId
+              pw.Text(AppData.partiesBox.get(_selectedSale!.customerId)?.name ?? 'Unknown Customer'),
               // Add more customer details if available in Party model and linked
               pw.SizedBox(height: 20),
 
@@ -72,7 +74,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
               pw.TableHelper.fromTextArray(
                 headers: ['Product', 'Quantity', 'Unit Price', 'Total'],
                 data: [
-                  [_selectedSale!.productName, _selectedSale!.quantity, '₹ ${_selectedSale!.saleAmount}', '₹ ${_selectedSale!.saleAmount}'],
+                  [_selectedSale!.productName, _selectedSale!.quantity, '₹ ${_selectedSale!.unitPrice.toStringAsFixed(2)}', '₹ ${_selectedSale!.totalAmount.toStringAsFixed(2)}'],
                   // Add more items if your sale could contain multiple products
                 ],
                 headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
@@ -96,11 +98,11 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   crossAxisAlignment: pw.CrossAxisAlignment.end,
                   children: [
                     pw.Divider(),
-                    pw.Text('Subtotal: ₹ ${_selectedSale!.saleAmount}'),
+                    pw.Text('Subtotal: ₹ ${_selectedSale!.totalAmount.toStringAsFixed(2)}'),
                     pw.Text('Tax (0%): ₹ 0.00'), // Placeholder for tax
                     pw.Text('Discount (0%): ₹ 0.00'), // Placeholder for discount
                     pw.Divider(),
-                    pw.Text('GRAND TOTAL: ₹ ${_selectedSale!.saleAmount}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 18)),
+                    pw.Text('GRAND TOTAL: ₹ ${_selectedSale!.totalAmount.toStringAsFixed(2)}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 18)),
                   ],
                 ),
               ),
@@ -145,7 +147,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
               valueListenable: AppData.salesBox.listenable(),
               builder: (context, Box<Sale> salesBox, _) {
                 final List<Sale> sales = salesBox.values.toList();
-                sales.sort((a, b) => b.date.compareTo(a.date)); // Sort by most recent first
+                sales.sort((a, b) => b.saleDate.compareTo(a.saleDate)); // Sort by most recent first
 
                 // Ensure _selectedSale is still in the list if it was previously selected
                 // This prevents "value not in items" error if data was cleared.
@@ -163,9 +165,11 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   value: _selectedSale,
                   hint: const Text('Choose a sale'),
                   items: sales.map((sale) {
+                    // Retrieve customer name from Party using customerId
+                    final customerName = AppData.partiesBox.get(sale.customerId)?.name ?? 'Unknown Customer';
                     return DropdownMenuItem<Sale>(
                       value: sale,
-                      child: Text('${sale.customerName} - ${sale.productName} (₹ ${sale.saleAmount}) on ${sale.date.day}/${sale.date.month}/${sale.date.year}'),
+                      child: Text('$customerName - ${sale.productName} (₹ ${sale.totalAmount.toStringAsFixed(2)}) on ${sale.saleDate.day}/${sale.saleDate.month}/${sale.saleDate.year}'),
                     );
                   }).toList(),
                   onChanged: (Sale? newValue) {
@@ -193,11 +197,12 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey[700]),
                       ),
                       const Divider(),
-                      Text('Customer: ${_selectedSale!.customerName}'),
+                      // Retrieve customer name from Party using customerId
+                      Text('Customer: ${AppData.partiesBox.get(_selectedSale!.customerId)?.name ?? 'Unknown Customer'}'),
                       Text('Product: ${_selectedSale!.productName}'),
                       Text('Quantity: ${_selectedSale!.quantity}'),
-                      Text('Amount: ₹ ${_selectedSale!.saleAmount}'),
-                      Text('Date: ${_selectedSale!.date.day}/${_selectedSale!.date.month}/${_selectedSale!.date.year}'),
+                      Text('Amount: ₹ ${_selectedSale!.totalAmount.toStringAsFixed(2)}'),
+                      Text('Date: ${_selectedSale!.saleDate.day}/${_selectedSale!.saleDate.month}/${_selectedSale!.saleDate.year}'),
                     ],
                   ),
                 ),

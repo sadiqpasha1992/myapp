@@ -8,6 +8,7 @@ import 'dart:js_interop';
 import 'package:web/web.dart' as web;
 
 import 'package:myapp/data/app_data.dart'; // Import Sale model
+import 'package:myapp/models/models.dart'; // Import Sale model
 
 Future<void> saveAndLaunchInvoice(
     BuildContext context, pw.Document pdf, Sale selectedSale) async {
@@ -27,7 +28,15 @@ Future<void> saveAndLaunchInvoice(
 
   // Create a URL for the Blob using web.URL
   final url = web.URL.createObjectURL(blob);
-  final String filename = 'invoice_${selectedSale.customerName}_${selectedSale.date.millisecondsSinceEpoch}.pdf';
+  // Get customer name from Party box
+  String customerName = 'UnknownCustomer'; // Default name
+  if (selectedSale.customerId != null) {
+    final party = AppData.partiesBox.get(selectedSale.customerId!);
+    if (party != null) {
+      customerName = party.name;
+    }
+  }
+  final String filename = 'invoice_${customerName}_${selectedSale.saleDate.millisecondsSinceEpoch}.pdf';
 
   // Create a temporary anchor element and click it to trigger download
   final anchor = web.document.createElement('a') as web.HTMLAnchorElement;

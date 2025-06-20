@@ -1,8 +1,9 @@
+// lib/parties_screen.dart (Corrected - Body Only + Data Logic Fixes)
 import 'package:flutter/material.dart';
-import 'package:hive_flutter/hive_flutter.dart'; // Import Hive for ValueListenableBuilder
-import '../data/app_data.dart'; // Import our shared data file
-
-// Party class is defined in app_data.dart
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:myapp/data/app_data.dart'; // Import our shared data file
+import 'package:myapp/models/models.dart'; // Import models.dart for Party
+import 'package:uuid/uuid.dart'; // For generating unique IDs
 
 // PartiesScreen is now a StatefulWidget because its content (form fields and the list of parties)
 // will change over time based on user interaction.
@@ -15,14 +16,13 @@ class PartiesScreen extends StatefulWidget {
 
 // This is the "State" class that holds the changeable data for PartiesScreen.
 class _PartiesScreenState extends State<PartiesScreen> {
+  final _formKey = GlobalKey<FormState>(); // Added a Form key for validation
   // TextEditingControllers for party input fields
   final TextEditingController _partyNameController = TextEditingController();
   final TextEditingController _gstNumberController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
-  final TextEditingController _contactController = TextEditingController();
-
-  // We no longer need a local List<Party> here, as data will come directly from Hive.
-  // final List<Party> _partiesList = [];
+  final TextEditingController _contactNumberController =
+      TextEditingController(); // Renamed for consistency with model
 
   // Variable to hold the selected party type (Customer or Supplier)
   String _selectedPartyType = 'Customer'; // Default value
@@ -33,113 +33,115 @@ class _PartiesScreenState extends State<PartiesScreen> {
     _partyNameController.dispose();
     _gstNumberController.dispose();
     _addressController.dispose();
-    _contactController.dispose();
+    _contactNumberController.dispose(); // Dispose correct controller
     super.dispose();
   }
 
   // Method to save a new party
-  void _saveParty() {
+  void _saveParty() async {
+    // Made async to await AppData.addParty
+    if (!_formKey.currentState!.validate()) {
+      return; // Form is not valid
+    }
+
     final String name = _partyNameController.text.trim();
     final String gstNumber = _gstNumberController.text.trim();
     final String address = _addressController.text.trim();
-    final String contact = _contactController.text.trim();
+    final String contactNumber =
+        _contactNumberController.text.trim(); // Use contactNumber
 
-    // Basic validation
-    if (name.isEmpty || contact.isEmpty) {
-      // Name and contact are mandatory
+    // Check for duplicate party name before adding
+    final bool partyExists = AppData.partiesBox.values.any(
+      (p) => p.name.toLowerCase() == name.toLowerCase(),
+    );
+
+    if (partyExists) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill Party Name and Contact!')),
+        const SnackBar(content: Text('Party with this name already exists!')),
       );
       return;
     }
-
+  
     // Create new Party object
     final newParty = Party(
+      id: const Uuid().v4(), // Generate unique ID
       name: name,
-      gstNumber: gstNumber.isNotEmpty ? gstNumber : 'N/A', // Store N/A if empty
-      address: address.isNotEmpty ? address : 'N/A', // Store N/A if empty
-      contact: contact,
       type: _selectedPartyType,
+      contactNumber: contactNumber,
+      address: address.isNotEmpty ? address : 'N/A', // Store N/A if empty
+      gstNumber:
+          gstNumber.isNotEmpty
+              ? gstNumber
+              : 'N/A', // Add gstNumber to the model
     );
 
-    // Add to the Hive Box using AppData
-    AppData.addParty(newParty)
-        .then((_) {
-          // Check if the widget is still mounted before using context
-          if (!mounted) return; // FIX ADDED HERE
+    try {
+      await AppData.addParty(newParty); // Use await
+      if (!mounted) return;
 
-          // Clear text fields after saving
-          _partyNameController.clear();
-          _gstNumberController.clear();
-          _addressController.clear();
-          _contactController.clear();
+      // Clear text fields after saving
+      _partyNameController.clear();
+      _gstNumberController.clear();
+      _addressController.clear();
+      _contactNumberController.clear();
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Party added successfully!')),
-          );
-        })
-        .catchError((error) {
-          // Check if the widget is still mounted before using context
-          if (!mounted) return; // FIX ADDED HERE
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to add party: $error')),
-          );
-        });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Party added successfully!')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to add party: $e')));
+      }
+    }
   }
 
-  // Method to delete a party
-  void _deleteParty(int index) {
+  // Method to delete a party by its ID
+  void _deleteParty(String partyId, String partyName) {
     // Show a confirmation dialog before deleting
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
-        // Use dialogContext to avoid confusion
         return AlertDialog(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(15),
           ),
           title: const Text('Confirm Deletion'),
-          // Access party details directly from the box for the dialog content
           content: Text(
-            'Are you sure you want to delete "${AppData.partiesBox.getAt(index)?.name}"? This action cannot be undone.',
+            'Are you sure you want to delete "$partyName"? This action cannot be undone.',
           ),
           actions: <Widget>[
             TextButton(
               onPressed: () {
-                Navigator.of(
-                  dialogContext,
-                ).pop(); // Close the dialog using dialogContext
+                Navigator.of(dialogContext).pop();
               },
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
-                // Close the dialog before the async delete operation
-                Navigator.of(dialogContext).pop(); // Use dialogContext
-
-                // Delete from the Hive Box using AppData
-                AppData.deleteParty(index)
-                    .then((_) {
-                      // Check if the widget is still mounted before using context
-                      if (!mounted) return; // FIX ADDED HERE
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Party deleted successfully!'),
-                        ),
-                      );
-                    })
-                    .catchError((error) {
-                      // Check if the widget is still mounted before using context
-                      if (!mounted) return; // FIX ADDED HERE
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Failed to delete party: $error'),
-                        ),
-                      );
-                    });
+              onPressed: () async {
+                // Made async to await AppData.deleteParty
+                Navigator.of(dialogContext).pop();
+                final currentContext = context; // Capture context
+                try {
+                  await AppData.deleteParty(partyId); // Delete by ID
+                  if (currentContext.mounted) {
+                    ScaffoldMessenger.of(currentContext).showSnackBar(
+                      const SnackBar(
+                        content: Text('Party deleted successfully!'),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (currentContext.mounted) {
+                    ScaffoldMessenger.of(currentContext).showSnackBar(
+                      SnackBar(content: Text('Failed to delete party: $e')),
+                    );
+                  }
+                }
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red, // Red color for delete button
+                backgroundColor: Colors.red,
                 foregroundColor: Colors.white,
               ),
               child: const Text('Delete'),
@@ -152,14 +154,12 @@ class _PartiesScreenState extends State<PartiesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Parties (Customers/Suppliers)'),
-        backgroundColor: Colors.indigo, // Distinct color for Parties
-        foregroundColor: Colors.white,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+    // --- IMPORTANT: Scaffold and AppBar have been REMOVED! ---
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Form(
+        // Wrap with Form for validation
+        key: _formKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -201,7 +201,8 @@ class _PartiesScreenState extends State<PartiesScreen> {
             const SizedBox(height: 16),
 
             // Party Name Text Field
-            TextField(
+            TextFormField(
+              // Changed to TextFormField for validation
               controller: _partyNameController,
               decoration: const InputDecoration(
                 labelText: 'Party Name',
@@ -212,11 +213,18 @@ class _PartiesScreenState extends State<PartiesScreen> {
                 prefixIcon: Icon(Icons.business),
               ),
               keyboardType: TextInputType.text,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter party name';
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 16),
 
             // GST Number Text Field
-            TextField(
+            TextFormField(
+              // Changed to TextFormField for validation
               controller: _gstNumberController,
               decoration: const InputDecoration(
                 labelText: 'GST Number (Optional)',
@@ -227,11 +235,13 @@ class _PartiesScreenState extends State<PartiesScreen> {
                 prefixIcon: Icon(Icons.badge),
               ),
               keyboardType: TextInputType.text,
+              // No validator for optional field
             ),
             const SizedBox(height: 16),
 
             // Address Text Field
-            TextField(
+            TextFormField(
+              // Changed to TextFormField for validation
               controller: _addressController,
               decoration: const InputDecoration(
                 labelText: 'Address (Optional)',
@@ -242,22 +252,34 @@ class _PartiesScreenState extends State<PartiesScreen> {
                 prefixIcon: Icon(Icons.location_on),
               ),
               keyboardType: TextInputType.streetAddress,
-              maxLines: 2, // Allow multiple lines for address
+              maxLines: 2,
+              // No validator for optional field
             ),
             const SizedBox(height: 16),
 
-            // Contact Text Field (Phone/Email)
-            TextField(
-              controller: _contactController,
+            // Contact Number Text Field
+            TextFormField(
+              // Changed to TextFormField for validation
+              controller: _contactNumberController, // Use correct controller
               decoration: const InputDecoration(
-                labelText: 'Contact (Phone or Email)',
-                hintText: 'e.g., +91 9876543210 or example@email.com',
+                labelText: 'Contact Number', // Changed label
+                hintText: 'e.g., +91 9876543210',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.all(Radius.circular(8.0)),
                 ),
                 prefixIcon: Icon(Icons.contact_phone),
               ),
-              keyboardType: TextInputType.text, // Can be phone or email
+              keyboardType: TextInputType.phone, // Changed to phone
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter contact number';
+                }
+                // Basic regex for phone number validation (optional, can be more complex)
+                if (!RegExp(r'^[0-9]+$').hasMatch(value)) {
+                  return 'Please enter a valid number';
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 24),
 
@@ -283,20 +305,17 @@ class _PartiesScreenState extends State<PartiesScreen> {
             const SizedBox(height: 32),
 
             // --- Section: Displaying Stored Parties ---
-            // Use ValueListenableBuilder to automatically rebuild when Hive box changes
-            ValueListenableBuilder(
-              valueListenable:
-                  AppData.partiesBox
-                      .listenable(), // Listen for changes in the 'parties' box
+            ValueListenableBuilder<Box<Party>>(
+              // Explicitly define Box type
+              valueListenable: AppData.partiesBox.listenable(),
               builder: (context, Box<Party> box, _) {
-                // Get the current list of parties from the box
                 final List<Party> parties = box.values.toList();
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Your Parties (${parties.length})', // Shows count of parties from Hive
+                      'Your Parties (${parties.length})',
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -319,17 +338,14 @@ class _PartiesScreenState extends State<PartiesScreen> {
                         )
                         : Container(
                           constraints: BoxConstraints(
-                            maxHeight:
-                                MediaQuery.of(context).size.height *
-                                0.5, // Max height of the list
+                            maxHeight: MediaQuery.of(context).size.height * 0.5,
                           ),
                           child: ListView.builder(
                             shrinkWrap: true,
                             physics: const ClampingScrollPhysics(),
-                            itemCount: parties.length, // Use the list from Hive
+                            itemCount: parties.length,
                             itemBuilder: (context, index) {
-                              final party =
-                                  parties[index]; // Use the party from Hive
+                              final party = parties[index];
 
                               return Card(
                                 margin: const EdgeInsets.symmetric(
@@ -357,8 +373,11 @@ class _PartiesScreenState extends State<PartiesScreen> {
                                             ),
                                             const SizedBox(height: 4),
                                             Text('Type: ${party.type}'),
-                                            Text('Contact: ${party.contact}'),
-                                            if (party.gstNumber != 'N/A')
+                                            Text(
+                                              'Contact: ${party.contactNumber}',
+                                            ), // Use contactNumber
+                                            if (party.gstNumber !=
+                                                'N/A') // Conditionally display GSTIN
                                               Text('GSTIN: ${party.gstNumber}'),
                                             if (party.address != 'N/A')
                                               Text('Address: ${party.address}'),
@@ -372,8 +391,10 @@ class _PartiesScreenState extends State<PartiesScreen> {
                                         ),
                                         onPressed:
                                             () => _deleteParty(
-                                              index,
-                                            ), // Call delete method
+                                              party
+                                                  .id, // Pass the party's ID for deletion
+                                              party.name,
+                                            ),
                                         tooltip: 'Delete Party',
                                       ),
                                     ],

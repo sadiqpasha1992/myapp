@@ -1,236 +1,240 @@
+// lib/sales_screen.dart (Corrected)
 import 'package:flutter/material.dart';
-import 'package:hive_flutter/hive_flutter.dart'; // Import Hive for ValueListenableBuilder
-import '../data/app_data.dart'; // Import our shared data file
-import '../sale_detail_screen.dart'; // Import SaleDetailScreen
+// Import other necessary files like app_data.dart, models.dart, etc.
+import 'package:myapp/data/app_data.dart';
+import 'package:myapp/models/models.dart';
+import 'package:uuid/uuid.dart'; // If you use Uuid for IDs
+import 'package:hive_flutter/hive_flutter.dart';
 
-// Sale class is defined in app_data.dart
-
-// SalesScreen is now a StatefulWidget because its content (form fields and the list of sales)
-// will change over time based on user interaction.
 class SalesScreen extends StatefulWidget {
-  const SalesScreen({super.key});
+  const SalesScreen({
+    super.key,
+  }); // Remove the old constructor if it took sale/saleIndex
 
   @override
   State<SalesScreen> createState() => _SalesScreenState();
 }
 
-// This is the "State" class that holds the changeable data for SalesScreen.
 class _SalesScreenState extends State<SalesScreen> {
-  // TextEditingController is like a special manager for a TextField.
-  // It helps you get and set the text within the TextField.
+  // ... (Keep all your existing controllers, methods like _saveSale, etc.) ...
+  final _formKey = GlobalKey<FormState>(); // Example if you use a Form
   final TextEditingController _customerNameController = TextEditingController();
-  final TextEditingController _saleAmountController = TextEditingController();
   final TextEditingController _productNameController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
+  final TextEditingController _unitPriceController = TextEditingController();
 
-  // Dispose controllers to free up memory when the widget is removed
+  Product? _selectedProduct; // To store the selected product for calculations
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize fields if editing an existing sale, otherwise leave empty
+    // For 'Add New Sale', these will be empty.
+  }
+
   @override
   void dispose() {
     _customerNameController.dispose();
-    _saleAmountController.dispose();
     _productNameController.dispose();
     _quantityController.dispose();
+    _unitPriceController.dispose();
     super.dispose();
   }
 
-  // This method will be called when the "Save Sale" button is pressed.
-  void _saveSale() async {
-    // Made async to await stock update
-    final String customerName = _customerNameController.text.trim();
-    final String productName = _productNameController.text.trim();
-    final String quantityStr = _quantityController.text.trim(); // Get as string
-    final String saleAmountStr = _saleAmountController.text.trim(); // Get as string
+  // Example for handling product selection and updating unit price
+  void _onProductSelected(Product? product) {
+    setState(() {
+      _selectedProduct = product;
+      if (product != null) {
+        _unitPriceController.text = product.unitPrice.toStringAsFixed(2);
+      } else {
+        _unitPriceController.clear();
+      }
+    });
+  }
 
-    // Basic validation: Check if fields are not empty
-    if (customerName.isEmpty ||
-        productName.isEmpty ||
-        quantityStr.isEmpty ||
-        saleAmountStr.isEmpty) {
+  void _saveSale() async {
+    if (!_formKey.currentState!.validate()) {
+      return; // Form is not valid
+    }
+
+    if (_selectedProduct == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Please fill all fields!')));
+      ).showSnackBar(const SnackBar(content: Text('Please select a product.')));
       return;
     }
 
-    final double? soldQuantity = double.tryParse(quantityStr);
-    if (soldQuantity == null || soldQuantity <= 0) {
+    final quantity = double.tryParse(_quantityController.text) ?? 0.0;
+    final unitPrice = double.tryParse(_unitPriceController.text) ?? 0.0;
+    final totalAmount = quantity * unitPrice;
+
+    if (quantity <= 0 || unitPrice <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter a valid positive quantity!'),
+          content: Text('Quantity and Unit Price must be positive numbers.'),
         ),
       );
       return;
     }
 
-    final double? parsedSaleAmount = double.tryParse(saleAmountStr);
-    if (parsedSaleAmount == null || parsedSaleAmount < 0) {
-       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter a valid positive sale amount!'),
-        ),
-      );
-      return;
-    }
-
-    // --- Stock Management: Decrement product quantity ---
-    // Find the product in stock
-    final List<Product> productsInStock = AppData.productsBox.values.toList();
-    final int productIndex = productsInStock.indexWhere(
-      (p) => p.name.toLowerCase() == productName.toLowerCase(),
-    );
-
-    if (productIndex != -1) {
-      final Product existingProduct = productsInStock[productIndex];
-      if (existingProduct.quantity >= soldQuantity) {
-        // Create an updated product with the new quantity
-        final updatedProduct = Product(
-          name: existingProduct.name,
-          quantity:
-              existingProduct.quantity - soldQuantity, // Decrement quantity
-          unit: existingProduct.unit,
-          purchasePrice: existingProduct.purchasePrice,
-          sellingPrice: existingProduct.sellingPrice,
-        );
-        // Update the product in Hive
-        await AppData.productsBox.putAt(productIndex, updatedProduct);
-      } else {
-        // Not enough stock
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Not enough stock for $productName. Available: ${existingProduct.quantity} ${existingProduct.unit}',
-            ),
-          ),
-        );
-        return; // Stop sale if not enough stock
-      }
-    } else {
-      // Product not found in stock
+    // Check if enough stock is available
+    if (_selectedProduct!.currentStock < quantity) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Product "$productName" not found in stock. Please add it via Stock Summary first.',
+            'Insufficient stock for ${_selectedProduct!.name}. Available: ${_selectedProduct!.currentStock}.',
           ),
         ),
       );
-      return; // Stop sale if product not found
+      return;
     }
-    // --- End Stock Management ---
 
-    // Create a new Sale object
     final newSale = Sale(
-      customerName: customerName,
-      productName: productName,
-      quantity: soldQuantity, // Use the parsed double quantity
-      saleAmount: parsedSaleAmount, // Use the parsed double sale amount
-      date: DateTime.now(), // Record the current date and time
+      id: const Uuid().v4(), // Generate a unique ID for the sale
+      productId: _selectedProduct!.id,
+      productName: _selectedProduct!.name,
+      quantity: quantity,
+      unitPrice: unitPrice,
+      totalAmount: totalAmount,
+      saleDate: DateTime.now(),
+      // customerId: _customerNameController.text.isNotEmpty ? _customerNameController.text : null, // If you link to Party
     );
 
-    // Add to the Hive Box using AppData
-    AppData.addSale(newSale)
-        .then((_) {
-          if (!mounted) return;
-
-          // Clear text fields after saving
-          _customerNameController.clear();
-          _saleAmountController.clear();
-          _productNameController.clear();
-          _quantityController.clear();
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Sale saved successfully! Stock updated.'),
-            ),
-          );
-        })
-        .catchError((error) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to save sale: $error')),
-          );
+    try {
+      AppData.addSale(newSale);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sale saved successfully! Stock updated.'),
+          ),
+        );
+        // Clear fields after successful save
+        _customerNameController.clear();
+        _productNameController.clear(); // Clear product name field
+        _quantityController.clear();
+        _unitPriceController.clear();
+        setState(() {
+          _selectedProduct = null; // Clear selected product
         });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to save sale: $e')));
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('New Sale'),
-        backgroundColor: Colors.green,
-        foregroundColor: Colors.white,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+    // --- IMPORTANT: REMOVED Scaffold and AppBar here! ---
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Form(
+        // Wrap your content in a Form if you're using GlobalKey<FormState>
+        key: _formKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Enter Sale Details:',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              'Add New Sale',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 24),
-
-            // Customer Name Text Field
-            TextField(
+            const SizedBox(height: 20),
+            // Your Customer Name field (if directly entered, not from Parties list)
+            TextFormField(
               controller: _customerNameController,
               decoration: const InputDecoration(
-                labelText: 'Customer Name',
-                hintText: 'e.g., John Doe',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(8.0)),
-                ),
+                labelText: 'Customer Name (Optional)',
+                border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.person),
               ),
-              keyboardType: TextInputType.text,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 15),
 
-            // Product Name Text Field
-            TextField(
-              controller: _productNameController,
+            // Product Selection (using DropdownButtonFormField as an example)
+            // You'll need to fetch products from AppData.productsBox
+            // Example:
+            ValueListenableBuilder<Box<Product>>(
+              valueListenable: AppData.productsBox.listenable(),
+              builder: (context, box, _) {
+                final products = box.values.toList();
+                return DropdownButtonFormField<Product>(
+                  decoration: const InputDecoration(
+                    labelText: 'Select Product',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.category),
+                  ),
+                  value: _selectedProduct,
+                  hint: const Text('Select a product'),
+                  onChanged: _onProductSelected,
+                  items:
+                      products.map((product) {
+                        return DropdownMenuItem<Product>(
+                          value: product,
+                          child: Text(product.name),
+                        );
+                      }).toList(),
+                  validator:
+                      (value) =>
+                          value == null ? 'Please select a product' : null,
+                );
+              },
+            ),
+            const SizedBox(height: 15),
+
+            TextFormField(
+              controller: _unitPriceController,
+              keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                labelText: 'Product Name',
-                hintText: 'e.g., Laptop Pro X1',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(8.0)),
-                ),
-                prefixIcon: Icon(Icons.inventory),
+                labelText: 'Unit Price',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.money),
               ),
-              keyboardType: TextInputType.text,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter unit price';
+                }
+                if (double.tryParse(value) == null ||
+                    double.tryParse(value)! <= 0) {
+                  return 'Please enter a valid positive number';
+                }
+                return null;
+              },
+              readOnly:
+                  _selectedProduct !=
+                  null, // Make it read-only if product is selected
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 15),
 
-            // Quantity Text Field
-            TextField(
+            TextFormField(
               controller: _quantityController,
+              keyboardType: TextInputType.number,
               decoration: const InputDecoration(
                 labelText: 'Quantity',
-                hintText: 'e.g., 2',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(8.0)),
-                ),
+                border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.numbers),
               ),
-              keyboardType: TextInputType.number,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter quantity';
+                }
+                if (double.tryParse(value) == null ||
+                    double.tryParse(value)! <= 0) {
+                  return 'Please enter a valid positive number';
+                }
+                if (_selectedProduct != null &&
+                    double.tryParse(value)! > _selectedProduct!.currentStock) {
+                  return 'Only ${_selectedProduct!.currentStock} in stock';
+                }
+                return null;
+              },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
 
-            // Sale Amount Text Field
-            TextField(
-              controller: _saleAmountController,
-              decoration: const InputDecoration(
-                labelText: 'Sale Amount',
-                hintText: 'e.g., 12500.00',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(8.0)),
-                ),
-                prefixIcon: Icon(Icons.currency_rupee),
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 24),
-
-            // Save Sale Button
+            // Save button
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
@@ -238,114 +242,54 @@ class _SalesScreenState extends State<SalesScreen> {
                 icon: const Icon(Icons.save),
                 label: const Text('Save Sale'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  backgroundColor: Colors.green, // Button color
+                  foregroundColor: Colors.white, // Text color
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  textStyle: const TextStyle(fontSize: 18),
                 ),
               ),
             ),
+            const SizedBox(height: 20),
 
-            const SizedBox(height: 32),
-
-            // --- Section: Displaying Saved Sales ---
-            ValueListenableBuilder(
+            // Display recent sales (optional, can be a separate widget/screen)
+            const Text(
+              'Recent Sales',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            ValueListenableBuilder<Box<Sale>>(
               valueListenable: AppData.salesBox.listenable(),
-              builder: (context, Box<Sale> box, _) {
-                final List<Sale> sales = box.values.toList();
-                // Sort by date (most recent first)
-                sales.sort((a, b) => b.date.compareTo(a.date));
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Saved Sales (${sales.length})',
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    sales.isEmpty
-                        ? const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(16.0),
-                            child: Text(
-                              'No sales recorded yet. Add your first sale above!',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        )
-                        : Container(
-                          constraints: BoxConstraints(
-                            maxHeight: MediaQuery.of(context).size.height * 0.5,
-                          ),
-                          child: ListView.builder(
-                            shrinkWrap: true,
-                            physics: const ClampingScrollPhysics(),
-                            itemCount: sales.length,
-                            itemBuilder: (context, index) {
-                              final sale = sales[index];
-                              // Get the actual Hive key/index for this item
-                              final int hiveIndex = AppData.salesBox.keyAt(
-                                index,
-                              );
-
-                              return Card(
-                                margin: const EdgeInsets.symmetric(
-                                  vertical: 8.0,
-                                ),
-                                elevation: 2,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: ListTile(
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder:
-                                            (context) => SaleDetailScreen(
-                                              sale: sale,
-                                              saleIndex:
-                                                  hiveIndex, // NEW: Pass the Hive index
-                                            ),
-                                      ),
-                                    );
-                                  },
-                                  leading: const Icon(
-                                    Icons.receipt_long,
-                                    color: Colors.green,
-                                  ),
-                                  title: Text(
-                                    '${sale.customerName} - ${sale.productName}',
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    'Qty: ${sale.quantity} | Amount: ₹ ${sale.saleAmount} | Date: ${sale.date.day}/${sale.date.month}/${sale.date.year}',
-                                  ),
-                                  trailing: const Icon(
-                                    Icons.arrow_forward_ios,
-                                    size: 16,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
+              builder: (context, box, _) {
+                final sales =
+                    box.values
+                        .toList()
+                        .reversed
+                        .take(5)
+                        .toList(); // Show last 5 sales
+                if (sales.isEmpty) {
+                  return const Center(child: Text('No sales yet.'));
+                }
+                return ListView.builder(
+                  shrinkWrap: true, // Important for nested list views
+                  physics:
+                      const NeverScrollableScrollPhysics(), // Important for nested list views
+                  itemCount: sales.length,
+                  itemBuilder: (context, index) {
+                    final sale = sales[index];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      child: ListTile(
+                        title: Text(
+                          '${sale.productName} - ${sale.quantity} Qty',
                         ),
-                  ],
+                        subtitle: Text(
+                          '₹${sale.totalAmount.toStringAsFixed(2)} on ${sale.saleDate.toLocal().toString().split(' ')[0]}',
+                        ),
+                      ),
+                    );
+                  },
                 );
               },
             ),

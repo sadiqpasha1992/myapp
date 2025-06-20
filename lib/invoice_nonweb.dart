@@ -4,7 +4,8 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart'; // Import for getting directory paths
 import 'package:open_filex/open_filex.dart'; // Import for opening the file
 
-import 'package:myapp/data/app_data.dart'; // Import Sale model
+
+import 'package:myapp/models/models.dart'; // Import Sale model
 
 Future<void> saveAndLaunchInvoice(
     BuildContext context, pw.Document pdf, Sale selectedSale) async {
@@ -13,7 +14,7 @@ Future<void> saveAndLaunchInvoice(
 
     // Get the application documents directory
     final directory = await getApplicationDocumentsDirectory();
-    final String filename = 'invoice_${selectedSale.customerName}_${selectedSale.date.millisecondsSinceEpoch}.pdf';
+    final String filename = 'invoice_${selectedSale.customerId}_${selectedSale.saleDate.millisecondsSinceEpoch}.pdf';
     final File file = File('${directory.path}/$filename');
 
     // Write the PDF bytes to the file

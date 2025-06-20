@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart'; // Import Hive for ValueListenableBuilder
 import 'package:myapp/data/app_data.dart'; // Import our shared data file
-
-// CashTransaction class is defined in app_data.dart
+import 'package:myapp/models/models.dart'; // Import CashTransaction class
 
 // CashBookScreen is a StatefulWidget to manage the form inputs and transaction list.
 class CashBookScreen extends StatefulWidget {

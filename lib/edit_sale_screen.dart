@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:myapp/data/app_data.dart'; // Import your Sale model
+import 'package:myapp/models/models.dart';
 
 class EditSaleScreen extends StatefulWidget {
-  final Sale sale;
-  final int saleIndex;
+  final Sale? sale;
+  final int? saleIndex;
 
   const EditSaleScreen({
     super.key,
-    required this.sale,
-    required this.saleIndex,
+    this.sale,
+    this.saleIndex,
   });
 
   @override
@@ -23,9 +23,9 @@ class EditSaleScreenState extends State<EditSaleScreen> {
   @override
   void initState() {
     super.initState();
-    _customerNameController = TextEditingController(text: widget.sale.customerName);
-    _amountController = TextEditingController(text: widget.sale.saleAmount.toString());
-    _dateController = TextEditingController(text: widget.sale.date.toString());
+    _customerNameController = TextEditingController(text: widget.sale?.productName ?? '');
+    _amountController = TextEditingController(text: widget.sale?.totalAmount.toString() ?? '');
+    _dateController = TextEditingController(text: widget.sale?.saleDate.toString() ?? '');
   }
 
   @override
@@ -48,7 +48,9 @@ class EditSaleScreenState extends State<EditSaleScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Center(
           child: Text(
-            'Edit screen for sale to ${widget.sale.customerName} (Index: ${widget.saleIndex})',
+            widget.sale != null
+                ? 'Edit screen for sale to ${widget.sale!.productName} (Index: ${widget.saleIndex})'
+                : 'Add New Sale Screen',
             style: const TextStyle(fontSize: 20),
           ),
         ),

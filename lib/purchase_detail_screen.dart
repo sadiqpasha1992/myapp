@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:myapp/data/app_data.dart'; // Import your Purchase model
+import 'package:myapp/models/models.dart'; // Import your Purchase model
+import 'package:myapp/data/app_data.dart'; // Import AppData
 
 class PurchaseDetailScreen extends StatefulWidget {
   final Purchase purchase; // The Purchase object to display
@@ -25,11 +26,11 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
   void initState() {
     super.initState();
     // Initialize controllers with current purchase data
-    _supplierNameController = TextEditingController(text: widget.purchase.supplierName);
+    _supplierNameController = TextEditingController(text: widget.purchase.supplierId ?? ''); // Assuming supplierId is used for display or linking
     _productNameController = TextEditingController(text: widget.purchase.productName);
     _quantityController = TextEditingController(text: widget.purchase.quantity.toString()); // Keep as string for text field
-    _purchaseAmountController = TextEditingController(text: widget.purchase.purchaseAmount.toString()); // Keep as string for text field
-    _selectedDate = widget.purchase.date;
+    _purchaseAmountController = TextEditingController(text: widget.purchase.totalAmount.toString()); // Use totalAmount
+    _selectedDate = widget.purchase.purchaseDate; // Use purchaseDate
   }
 
   @override
@@ -63,16 +64,16 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 20, color: Colors.grey[600]),
+          Icon(icon, size: 20, color: Colors.grey),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.grey[700]),
-                ),
+                  Text(
+                    label,
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.grey[700]),
+                  ),
                 const SizedBox(height: 4),
                 Text(
                   value,
@@ -110,7 +111,7 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
         return AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           title: const Text('Confirm Deletion'),
-          content: Text('Are you sure you want to delete the purchase of "${widget.purchase.productName}" from "${widget.purchase.supplierName}"? This action cannot be undone and will affect stock levels.'),
+          content: Text('Are you sure you want to delete the purchase of "${widget.purchase.productName}"? This action cannot be undone and will affect stock levels.'), // Removed supplierName as it's not directly on Purchase
           actions: <Widget>[
             TextButton(
               onPressed: () {
@@ -130,11 +131,12 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
                   final Product existingProduct = productsInStock[productIndex];
                   final double purchasedQuantity = widget.purchase.quantity;
                   final updatedProduct = Product(
+                    id: existingProduct.id,
                     name: existingProduct.name,
-                    quantity: existingProduct.quantity - purchasedQuantity, // Revert: Subtract quantity
+                    currentStock: existingProduct.currentStock - purchasedQuantity,
                     unit: existingProduct.unit,
                     purchasePrice: existingProduct.purchasePrice,
-                    sellingPrice: existingProduct.sellingPrice,
+                    unitPrice: existingProduct.unitPrice,
                   );
                   await AppData.productsBox.putAt(productIndex, updatedProduct);
                   if (context.mounted) {
@@ -188,7 +190,7 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
       return;
     }
 
-    final double? oldQuantity = double.tryParse(widget.purchase.quantity.toString());
+    final double oldQuantity = widget.purchase.quantity; // quantity is already double
     final double? newQuantity = double.tryParse(newQuantityStr);
 
     if (newQuantity == null || newQuantity <= 0) {
@@ -200,7 +202,7 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
 
     // --- Stock Management for Edit Operation ---
     // Calculate the change in quantity
-    double quantityDifference = newQuantity - (oldQuantity ?? 0.0);
+    double quantityDifference = newQuantity - oldQuantity;
 
     // Find the product in stock (old and new product names)
     final List<Product> productsInStock = AppData.productsBox.values.toList();
@@ -211,12 +213,15 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
     if (oldProductIndex != -1 && (widget.purchase.productName.toLowerCase() != newProductName.toLowerCase() || quantityDifference > 0)) {
       final Product oldProduct = productsInStock[oldProductIndex];
       final double quantityToRevert = widget.purchase.productName.toLowerCase() != newProductName.toLowerCase()
-          ? (oldQuantity ?? 0.0) // Revert full old quantity if product name changed
+          ? oldQuantity // Revert full old quantity if product name changed
           : quantityDifference; // Revert only the increase if product name is same
       final updatedOldProduct = Product(
+          id: oldProduct.id,
           name: oldProduct.name,
-          quantity: oldProduct.quantity - quantityToRevert, // Subtract quantity back for old product
-          unit: oldProduct.unit, purchasePrice: oldProduct.purchasePrice, sellingPrice: oldProduct.sellingPrice,
+          currentStock: oldProduct.currentStock - quantityToRevert,
+          unit: oldProduct.unit,
+          purchasePrice: oldProduct.purchasePrice,
+          unitPrice: oldProduct.unitPrice,
       );
       await AppData.productsBox.putAt(oldProductIndex, updatedOldProduct);
     }
@@ -227,29 +232,42 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
       // Only update if product name is the same OR if it's a new product for this entry
       if (widget.purchase.productName.toLowerCase() == newProductName.toLowerCase()) {
          final updatedNewProduct = Product(
+          id: newProduct.id,
           name: newProduct.name,
-          quantity: newProduct.quantity + quantityDifference, // Apply the net change (add)
-          unit: newProduct.unit, purchasePrice: newProduct.purchasePrice, sellingPrice: newProduct.sellingPrice,
+          currentStock: newProduct.currentStock + quantityDifference,
+          unit: newProduct.unit,
+          purchasePrice: newProduct.purchasePrice,
+          unitPrice: newProduct.unitPrice,
         );
         await AppData.productsBox.putAt(newProductIndex, updatedNewProduct);
       } else {
         // New product name, increment stock for this new product
-        final updatedNewProduct = Product(
+        // This case seems incorrect for an *edit* operation. If the product name changes,
+        // we should update the existing product entry if it exists, or add a new one.
+        // The original code seems to add a new product even if one with the new name exists.
+        // Let's assume the intention is to update the existing product with the new name if it exists,
+        // or add a new one if it doesn't.
+        // Reverting the old product stock was handled above. Now, add the new quantity to the new product.
+         final updatedNewProduct = Product(
+          id: newProduct.id,
           name: newProduct.name,
-          quantity: newProduct.quantity + newQuantity,
-          unit: newProduct.unit, purchasePrice: newProduct.purchasePrice, sellingPrice: newProduct.sellingPrice,
+          currentStock: newProduct.currentStock + newQuantity,
+          unit: newProduct.unit,
+          purchasePrice: newProduct.purchasePrice,
+          unitPrice: newProduct.unitPrice,
         );
-        await AppData.productsBox.add(updatedNewProduct); // Use add if it's a completely new product being introduced via purchase edit
+        await AppData.productsBox.putAt(newProductIndex, updatedNewProduct); // Update existing product
       }
 
     } else {
       // New product name not found in stock, auto-add it with the new quantity
       final newProduct = Product(
+        id: DateTime.now().millisecondsSinceEpoch.toString(), // Generate a simple unique ID
         name: newProductName,
-        quantity: newQuantity.toDouble(),
+        currentStock: newQuantity.toDouble(),
         unit: 'Pcs', // Default unit for new product
         purchasePrice: double.tryParse(newPurchaseAmountStr) ?? 0.0,
-        sellingPrice: (double.tryParse(newPurchaseAmountStr) ?? 0.0) * 1.2,
+        unitPrice: (double.tryParse(newPurchaseAmountStr) ?? 0.0) * 1.2, // Use unitPrice (selling price)
       );
       await AppData.productsBox.add(newProduct);
     }
@@ -257,11 +275,14 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
 
     // Create an updated Purchase object
     final updatedPurchase = Purchase(
-      supplierName: newSupplierName,
+      id: widget.purchase.id, // Keep the original ID
+      productId: widget.purchase.productId, // Keep the original product ID or update if needed? Assuming keep for now.
       productName: newProductName,
-      quantity: double.tryParse(newQuantityStr) ?? 0.0,
-      purchaseAmount: double.tryParse(newPurchaseAmountStr) ?? 0.0,
-      date: _selectedDate,
+      quantity: newQuantity, // Use the parsed double quantity
+      unitPrice: widget.purchase.unitPrice, // Keep original unit price or calculate? Assuming keep.
+      totalAmount: double.tryParse(newPurchaseAmountStr) ?? 0.0, // Use totalAmount
+      purchaseDate: _selectedDate, // Use purchaseDate
+      supplierId: newSupplierName, // Assuming supplierName input is used for supplierId
     );
 
     // Update the purchase in Hive at its original index
@@ -354,15 +375,19 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Purchase from: ${widget.purchase.supplierName}',
-                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.orange),
+                      const SizedBox(), // Added to break potential const context
+                      const Text(
+                        'Purchase Details', // Changed title as supplierName might not be directly available
+                        style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.orange),
                       ),
                       const Divider(height: 30, thickness: 1.5),
                       _buildDetailRow('Product Name:', widget.purchase.productName, Icons.inventory_2),
                       _buildDetailRow('Quantity:', widget.purchase.quantity.toString(), Icons.numbers),
-                      _buildDetailRow('Purchase Amount:', '₹ ${widget.purchase.purchaseAmount}', Icons.currency_rupee),
-                      _buildDetailRow('Date:', '${widget.purchase.date.day}/${widget.purchase.date.month}/${widget.purchase.date.year}', Icons.calendar_today),
+                      _buildDetailRow('Total Amount:', '₹ ${widget.purchase.totalAmount}', Icons.currency_rupee), // Use totalAmount
+                      _buildDetailRow('Purchase Date:', '${widget.purchase.purchaseDate.day}/${widget.purchase.purchaseDate.month}/${widget.purchase.purchaseDate.year}', Icons.calendar_today), // Use purchaseDate
+                      // Optionally display supplierId if needed
+                      if (widget.purchase.supplierId != null && widget.purchase.supplierId!.isNotEmpty)
+                         _buildDetailRow('Supplier ID:', widget.purchase.supplierId!, Icons.local_shipping),
                       const SizedBox(height: 30),
                       Center(
                         child: ElevatedButton.icon(
