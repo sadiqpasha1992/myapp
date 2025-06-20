@@ -1,5 +1,8 @@
 // lib/dashboard_screen.dart
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:myapp/data/app_data.dart';
+import 'package:myapp/models/models.dart'; // Import models.dart for access to Product, Sale, Purchase, CashTransaction
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -39,32 +42,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // Helper method for the "Performance Overview" if you want to keep it.
-  // If you don't want "Performance Overview", remove this method and its call below.
-  Widget _buildPerformanceOverview() {
-    // This is just a placeholder for the graph/chart area.
-    // Replace with your actual charting library (e.g., fl_chart, charts_flutter)
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      child: Container(
-        padding: const EdgeInsets.all(16.0),
-        height: 200, // Adjust height as needed
-        width: double.infinity,
-        child: const Center(
-          child: Text(
-            'Performance Chart Area\n(Data Visualization Here)',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 16, color: Colors.grey),
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    // --- IMPORTANT: NO Scaffold or AppBar here! ---
+    // IMPORTANT: This screen is "body-only". It does NOT return a Scaffold or AppBar directly.
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -88,41 +68,64 @@ class _DashboardScreenState extends State<DashboardScreen> {
             mainAxisSpacing: 15,
             childAspectRatio: 1.2, // Adjust card aspect ratio
             children: [
-              // You'll fetch actual data from AppData boxes
-              _buildDashboardCard(
-                'Total Sales',
-                '₹0.00', // Replace with actual calculated total sales
-                Icons.shopping_cart,
-                Colors.green,
+              // Total Sales Card
+              ValueListenableBuilder<Box<Sale>>(
+                valueListenable: AppData.salesBox.listenable(),
+                builder: (context, box, _) {
+                  final double totalSales = box.values.fold(0.0, (sum, sale) => sum + sale.totalAmount);
+                  return _buildDashboardCard(
+                    'Total Sales',
+                    '₹${totalSales.toStringAsFixed(2)}',
+                    Icons.shopping_cart,
+                    Colors.green,
+                  );
+                },
               ),
-              _buildDashboardCard(
-                'Total Purchases',
-                '₹0.00', // Replace with actual calculated total purchases
-                Icons.add_shopping_cart,
-                Colors.orange,
+              // Total Purchases Card
+              ValueListenableBuilder<Box<Purchase>>(
+                valueListenable: AppData.purchasesBox.listenable(),
+                builder: (context, box, _) {
+                  final double totalPurchases = box.values.fold(0.0, (sum, purchase) => sum + purchase.totalAmount);
+                  return _buildDashboardCard(
+                    'Total Purchases',
+                    '₹${totalPurchases.toStringAsFixed(2)}',
+                    Icons.add_shopping_cart,
+                    Colors.orange,
+                  );
+                },
               ),
-              _buildDashboardCard(
-                'Cash Balance',
-                '₹0.00', // Replace with actual calculated cash balance
-                Icons.account_balance_wallet,
-                Colors.blue,
+              // Cash Balance Card (Requires CashTransaction model and box)
+              ValueListenableBuilder<Box<CashTransaction>>(
+                valueListenable: AppData.cashTransactionsBox.listenable(),
+                builder: (context, box, _) {
+                  final double cashIn = box.values.where((t) => t.type == 'Cash In').fold(0.0, (sum, t) => sum + t.amount);
+                  final double cashOut = box.values.where((t) => t.type == 'Cash Out').fold(0.0, (sum, t) => sum + t.amount);
+                  final double cashBalance = cashIn - cashOut;
+                  return _buildDashboardCard(
+                    'Cash Balance',
+                    '₹${cashBalance.toStringAsFixed(2)}',
+                    Icons.account_balance_wallet,
+                    cashBalance >= 0 ? Colors.blue : Colors.red, // Color based on balance
+                  );
+                },
               ),
-              _buildDashboardCard(
-                'Low Stock Items',
-                '0', // Replace with actual count of low stock items
-                Icons.low_priority,
-                Colors.red,
+              // Low Stock Items Card
+              ValueListenableBuilder<Box<Product>>(
+                valueListenable: AppData.productsBox.listenable(),
+                builder: (context, box, _) {
+                  final int lowStockItems = box.values.where((p) => p.currentStock < 10).length; // Example threshold: < 10 units
+                  return _buildDashboardCard(
+                    'Low Stock Items',
+                    lowStockItems.toString(),
+                    Icons.low_priority,
+                    lowStockItems > 0 ? Colors.red : Colors.green, // Red if low, green if good
+                  );
+                },
               ),
             ],
           ),
           const SizedBox(height: 20),
-          const Text(
-            'Performance Overview',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 15),
-          _buildPerformanceOverview(), // Call the method to build the chart area
-          const SizedBox(height: 20),
+          // --- REMOVED: "Performance Overview" section and its content ---
           const Text(
             'Recent Activity',
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
